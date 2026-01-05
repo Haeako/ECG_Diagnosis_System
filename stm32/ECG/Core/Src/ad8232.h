@@ -1,0 +1,2 @@
+#define AD8232_VOLTAGE 3.3
+
