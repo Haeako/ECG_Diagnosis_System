@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECG CSV Visualizer</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #071018; color: #dce9f3; }
+    header { position: sticky; top: 0; z-index: 2; padding: 16px 22px; background: #0c1822ee; border-bottom: 1px solid #213544; }
+    h1 { margin: 0 0 12px; font-size: 20px; }
+    .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    input, select, button { padding: 8px 10px; border: 1px solid #345064; border-radius: 7px; background: #102331; color: inherit; }
+    button { cursor: pointer; }
+    #status { color: #8fb2c9; }
+    main { padding: 18px; }
+    .empty { padding: 70px 20px; text-align: center; color: #7594a8; border: 1px dashed #345064; border-radius: 12px; }
+    .chart { margin-bottom: 15px; padding: 12px; background: #0c1822; border: 1px solid #213544; border-radius: 10px; }
+    .chart-title { margin: 0 0 7px 54px; color: #9fc7df; font-size: 13px; }
+    canvas { display: block; width: 100%; height: 190px; }
+    .hint { font-size: 12px; color: #7594a8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ECG CSV Visualizer</h1>
+    <div class="tools">
+      <input id="files" type="file" accept=".csv,text/csv" multiple>
+      <input id="folder" type="file" accept=".csv,text/csv" multiple webkitdirectory directory>
+      <label>Cửa sổ
+        <select id="window">
+          <option value="0">Toàn bộ</option>
+          <option value="5">5 giây</option>
+          <option value="10" selected>10 giây</option>
+          <option value="30">30 giây</option>
+          <option value="60">60 giây</option>
+        </select>
+      </label>
+      <input id="start" type="range" min="0" max="0" value="0" step="0.1">
+      <button id="reset">Về đầu</button>
+      <span id="status">Chọn file CSV hoặc chọn cả thư mục pre_move_data</span>
+    </div>
+    <div class="hint">Các file được ghép theo tên/path. Điểm đỏ là is_peak. Kéo thanh trượt để di chuyển theo thời gian.</div>
+  </header>
+  <main id="charts"><div class="empty">Chưa có dữ liệu ECG</div></main>
+
+  <script>
+    const fileInput = document.querySelector("#files");
+    const folderInput = document.querySelector("#folder");
+    const windowSelect = document.querySelector("#window");
+    const startSlider = document.querySelector("#start");
+    const status = document.querySelector("#status");
+    const charts = document.querySelector("#charts");
+    let dataset = null;
+
+    function parseCSV(text) {
+      const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(",").map(x => x.trim());
+      return lines.slice(1).map(line => {
+        const values = line.split(",");
+        return Object.fromEntries(headers.map((h, i) => [h, values[i]?.trim() ?? ""]));
+      });
+    }
+
+    async function loadFiles(files) {
+      const rows = [];
+      const csvFiles = [...files]
+        .filter(file => file.name.toLowerCase().endsWith(".csv"))
+        .sort((a, b) => {
+          const ap = a.webkitRelativePath || a.name;
+          const bp = b.webkitRelativePath || b.name;
+          return ap.localeCompare(bp);
+        });
+      for (const file of csvFiles) {
+        rows.push(...parseCSV(await file.text()));
+      }
+      if (!rows.length || !("timestamp_ms" in rows[0])) throw new Error("CSV thiếu cột timestamp_ms hoặc không có mẫu");
+
+      const first = Number(rows[0].timestamp_ms);
+      const excluded = new Set(["timestamp_ms", "is_peak"]);
+      const columns = Object.keys(rows[0]).filter(k => !excluded.has(k));
+      dataset = {
+        t: rows.map(r => (Number(r.timestamp_ms) - first) / 1000),
+        peaks: rows.map(r => Number(r.is_peak || 0) !== 0),
+        columns,
+        values: Object.fromEntries(columns.map(c => [c, rows.map(r => Number(r[c]))]))
+      };
+      const duration = dataset.t.at(-1) || 0;
+      startSlider.max = duration;
+      startSlider.value = 0;
+      status.textContent = `${csvFiles.length} file · ${rows.length.toLocaleString()} mẫu · ${duration.toFixed(2)} s`;
+      buildCharts();
+      draw();
+    }
+
+    function buildCharts() {
+      charts.innerHTML = "";
+      dataset.columns.forEach(column => {
+        const box = document.createElement("section");
+        box.className = "chart";
+        box.innerHTML = `<div class="chart-title">${column}</div><canvas></canvas>`;
+        box.dataset.column = column;
+        charts.appendChild(box);
+      });
+    }
+
+    function drawChart(canvas, column, from, to) {
+      const dpr = devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+      const pad = { l: 54, r: 14, t: 10, b: 25 };
+      const w = width - pad.l - pad.r, h = height - pad.t - pad.b;
+      const indices = [];
+      for (let i = 0; i < dataset.t.length; i++) if (dataset.t[i] >= from && dataset.t[i] <= to) indices.push(i);
+      if (!indices.length) return;
+      const ys = indices.map(i => dataset.values[column][i]).filter(Number.isFinite);
+      let ymin = Math.min(...ys), ymax = Math.max(...ys);
+      if (ymin === ymax) { ymin--; ymax++; }
+      const x = t => pad.l + (t - from) / Math.max(to - from, 0.001) * w;
+      const y = v => pad.t + (ymax - v) / (ymax - ymin) * h;
+
+      ctx.strokeStyle = "#243b49"; ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const gy = pad.t + h * i / 4;
+        ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(width - pad.r, gy); ctx.stroke();
+      }
+      ctx.fillStyle = "#7999ad"; ctx.font = "11px system-ui";
+      ctx.fillText(ymax.toFixed(1), 4, pad.t + 9);
+      ctx.fillText(ymin.toFixed(1), 4, pad.t + h);
+      ctx.fillText(`${from.toFixed(1)} s`, pad.l, height - 6);
+      ctx.fillText(`${to.toFixed(1)} s`, width - pad.r - 42, height - 6);
+
+      ctx.strokeStyle = "#45b7e8"; ctx.lineWidth = 1.2; ctx.beginPath();
+      let started = false;
+      for (const i of indices) {
+        const value = dataset.values[column][i];
+        if (!Number.isFinite(value)) { started = false; continue; }
+        if (!started) { ctx.moveTo(x(dataset.t[i]), y(value)); started = true; }
+        else ctx.lineTo(x(dataset.t[i]), y(value));
+      }
+      ctx.stroke();
+
+      if (["raw_adc", "raw_centered", "corrected", "filtered"].includes(column)) {
+        ctx.fillStyle = "#ff5263";
+        for (const i of indices) if (dataset.peaks[i] && Number.isFinite(dataset.values[column][i])) {
+          ctx.beginPath(); ctx.arc(x(dataset.t[i]), y(dataset.values[column][i]), 3.5, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    function draw() {
+      if (!dataset) return;
+      const start = Number(startSlider.value);
+      const duration = Number(windowSelect.value);
+      const end = duration ? Math.min(start + duration, dataset.t.at(-1)) : dataset.t.at(-1);
+      document.querySelectorAll(".chart").forEach(box =>
+        drawChart(box.querySelector("canvas"), box.dataset.column, duration ? start : 0, end)
+      );
+    }
+
+    fileInput.addEventListener("change", () => loadFiles(fileInput.files).catch(e => status.textContent = `Lỗi: ${e.message}`));
+    folderInput.addEventListener("change", () => loadFiles(folderInput.files).catch(e => status.textContent = `Lỗi: ${e.message}`));
+    windowSelect.addEventListener("change", draw);
+    startSlider.addEventListener("input", draw);
+    document.querySelector("#reset").addEventListener("click", () => { startSlider.value = 0; draw(); });
+    addEventListener("resize", draw);
+  </script>
+</body>
+</html>

@@ -1,10 +1,11 @@
 #ifndef __RING_BUFFER_H__
 #define __RING_BUFFER_H__
 
+#include <stdbool.h>
 #include "freertos/ringbuf.h"
 
-extern RingbufHandle_t buf_handle;
+extern RingbufHandle_t sd_buf_handle;
 
-void ring_buffer_init(void);
+bool ring_buffer_init(void);
 
 #endif

@@ -26,6 +26,10 @@ esp_err_t sd_spi_init(void)
 {
     esp_err_t ret;
 
+    if (card != NULL) {
+        return ESP_OK;
+    }
+
     // Cấu hình cho SPI host
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
@@ -44,21 +48,19 @@ esp_err_t sd_spi_init(void)
 
     ret = spi_bus_initialize(host.slot, &bus_cfg, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "Failed to initialize SPI bus (%s)", esp_err_to_name(ret));
         return ret;
     }
 
     // Initialize SPI host driver
     ret = sdspi_host_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize SD SPI host (%s)", esp_err_to_name(ret));
         spi_bus_free(host.slot);
         return ret;
     }
 
     // Mount FAT filesystem
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = true,
+        .format_if_mount_failed = false,
         .max_files = 5,
         .allocation_unit_size = 16 * 1024,
     };
@@ -66,11 +68,6 @@ esp_err_t sd_spi_init(void)
     ret = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &card);
     
     if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            ESP_LOGE(TAG, "Failed to mount filesystem");
-        } else {
-            ESP_LOGE(TAG, "Failed to initialize the card (%s)", esp_err_to_name(ret));
-        }
         sdspi_host_deinit();
         spi_bus_free(host.slot);
         return ret;
@@ -97,6 +94,11 @@ esp_err_t sd_spi_init(void)
     }
 
     return ESP_OK;
+}
+
+bool sd_spi_is_mounted(void)
+{
+    return card != NULL;
 }
 
 esp_err_t sd_spi_write(const char *filename, const void *data, size_t len)

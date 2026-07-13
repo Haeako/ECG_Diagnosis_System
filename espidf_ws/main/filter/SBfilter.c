@@ -1,7 +1,7 @@
 /******************************* SOURCE LICENSE *********************************
 Copyright (c) 2021 MicroModeler.
 
-A non-exclusive, nontransferable, perpetual, royalty-free license is granted to the Licensee to
+A non-exclusive, nontransferable, perpetual, royalty-free license is granted to the Licensee to 
 use the following Information for academic, non-profit, or government-sponsored research purposes.
 Use of the following Information under this License is restricted to NON-COMMERCIAL PURPOSES ONLY.
 Commercial use of the following Information requires a separately executed written license agreement.
@@ -13,73 +13,73 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 // A commercial license for MicroModeler DSP can be obtained at https://www.micromodeler.com/launch.jsp
 
-#include "SBfilter.h"
+#include "HPfilter.h"
 
 #include <stdlib.h> // For malloc/free
 #include <string.h> // For memset
 
-float SBfilter_coefficients[20] =
+float HPfilter_coefficients[20] = 
 {
 // Scaled for floating point
 
-    0.9837151741297546, -1.5917160061021978, 0.9837151741297548, 1.6058769817089902, -0.9884191237792488,// b0, b1, b2, a1, a2
-    1, -1.6180659279860272, 1.0000000000000002, 1.6115592181281087, -0.9884950929592975,// b0, b1, b2, a1, a2
-    1, -1.6180659279860272, 1.0000000000000002, 1.607291847051848, -0.9951644538264732,// b0, b1, b2, a1, a2
-    1, -1.6180659279860272, 1.0000000000000002, 1.6209691227258205, -0.9952409309962167// b0, b1, b2, a1, a2
+    0.9774538849801447, -1.2566383415479088, 0.9774538849801452, 1.2702232305463554, -0.9839595276131086,// b0, b1, b2, a1, a2
+    1, -1.285624172002176, 1.0000000000000004, 1.2804320449668785, -0.9840484710030306,// b0, b1, b2, a1, a2
+    1, -1.285624172002176, 1.0000000000000004, 1.2689222348576417, -0.9932985239996022,// b0, b1, b2, a1, a2
+    1, -1.285624172002176, 1.0000000000000004, 1.2936022087572714, -0.9933882936628773// b0, b1, b2, a1, a2
 
 };
 
 
-SBfilterType *SBfilter_create( void )
+HPfilterType *HPfilter_create( void )
 {
-    SBfilterType *result = (SBfilterType *)malloc( sizeof( SBfilterType ) ); // Allocate memory for the object
-    SBfilter_init( result );                                               // Initialize it
+    HPfilterType *result = (HPfilterType *)malloc( sizeof( HPfilterType ) ); // Allocate memory for the object
+    HPfilter_init( result );                                               // Initialize it
     return result;                                                        // Return the result
 }
 
-void SBfilter_destroy( SBfilterType *pObject )
+void HPfilter_destroy( HPfilterType *pObject )
 {
     free( pObject );
 }
 
-void SBfilter_init( SBfilterType * pThis )
+void HPfilter_init( HPfilterType * pThis )
 {
-    SBfilter_reset( pThis );
+    HPfilter_reset( pThis );
 }
 
-void SBfilter_reset( SBfilterType * pThis )
+void HPfilter_reset( HPfilterType * pThis )
 {
     memset( &pThis->state, 0, sizeof( pThis->state ) ); // Reset state to 0
     pThis->output = 0;                                    // Reset output
 }
 
-int SBfilter_filterBlock( SBfilterType * pThis, float * pInput, float * pOutput, unsigned int count )
+int HPfilter_filterBlock( HPfilterType * pThis, float * pInput, float * pOutput, unsigned int count )
 {
-    SBfilter_executionState executionState;          // The executionState structure holds call data, minimizing stack reads and writes
+    HPfilter_executionState executionState;          // The executionState structure holds call data, minimizing stack reads and writes 
     if( ! count ) return 0;                         // If there are no input samples, return immediately
     executionState.pInput = pInput;                 // Pointers to the input and output buffers that each call to filterBiquad() will use
     executionState.pOutput = pOutput;               // - pInput and pOutput can be equal, allowing reuse of the same memory.
     executionState.count = count;                   // The number of samples to be processed
-    executionState.pState = pThis->state;                   // Pointer to the biquad's internal state and coefficients.
-    executionState.pCoefficients = SBfilter_coefficients;    // Each call to filterBiquad() will advance pState and pCoefficients to the next biquad
+    executionState.pState = pThis->state;                   // Pointer to the biquad's internal state and coefficients. 
+    executionState.pCoefficients = HPfilter_coefficients;    // Each call to filterBiquad() will advance pState and pCoefficients to the next biquad
 
     // The 1st call to filter1_filterBiquad() reads from the caller supplied input buffer and writes to the output buffer.
     // The remaining calls to filterBiquad() recycle the same output buffer, so that multiple intermediate buffers are not required.
 
-    SBfilter_filterBiquad( &executionState );		// Run biquad #0
+    HPfilter_filterBiquad( &executionState );		// Run biquad #0
     executionState.pInput = executionState.pOutput;         // The remaining biquads will now re-use the same output buffer.
 
-    SBfilter_filterBiquad( &executionState );		// Run biquad #1
+    HPfilter_filterBiquad( &executionState );		// Run biquad #1
 
-    SBfilter_filterBiquad( &executionState );		// Run biquad #2
+    HPfilter_filterBiquad( &executionState );		// Run biquad #2
 
-    SBfilter_filterBiquad( &executionState );		// Run biquad #3
+    HPfilter_filterBiquad( &executionState );		// Run biquad #3
 
-    // At this point, the caller-supplied output buffer will contain the filtered samples and the input buffer will contain the unmodified input samples.
+    // At this point, the caller-supplied output buffer will contain the filtered samples and the input buffer will contain the unmodified input samples.  
     return count;		// Return the number of samples processed, the same as the number of input samples
 }
 
-void SBfilter_filterBiquad( SBfilter_executionState * pExecState )
+void HPfilter_filterBiquad( HPfilter_executionState * pExecState )
 {
 
     // Read state variables
@@ -126,7 +126,7 @@ void SBfilter_filterBiquad( SBfilter_executionState * pExecState )
     *(pExecState->pState++) = x2;
     *(pExecState->pState++) = y1;
     *(pExecState->pState++) = y2;
-
+   
 }
 
 

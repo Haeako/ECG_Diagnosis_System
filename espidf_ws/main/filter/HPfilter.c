@@ -18,11 +18,12 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #include <stdlib.h> // For malloc/free
 #include <string.h> // For memset
 
-float HPfilter_coefficients[5] = 
+float HPfilter_coefficients[10] = 
 {
 // Scaled for floating point
 
-    0.9995558103876083, -1.9991116207752166, 0.9995558103876083, 1.9991114234707956, -0.9991118180796386// b0, b1, b2, a1, a2
+    0.988662800744742, -1.977325601489484, 0.988662800744742, 1.9839288807182445, -0.9840044255274392,// b0, b1, b2, a1, a2
+    1, -2, 1, 1.9932673287733085, -0.9933432291755304// b0, b1, b2, a1, a2
 
 };
 
@@ -65,6 +66,8 @@ int HPfilter_filterBlock( HPfilterType * pThis, float * pInput, float * pOutput,
 
     HPfilter_filterBiquad( &executionState );		// Run biquad #0
     executionState.pInput = executionState.pOutput;         // The remaining biquads will now re-use the same output buffer.
+
+    HPfilter_filterBiquad( &executionState );		// Run biquad #1
 
     // At this point, the caller-supplied output buffer will contain the filtered samples and the input buffer will contain the unmodified input samples.  
     return count;		// Return the number of samples processed, the same as the number of input samples

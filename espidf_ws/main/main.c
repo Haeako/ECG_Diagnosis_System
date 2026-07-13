@@ -1,281 +1,308 @@
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
-#include <stddef.h>   /* offsetof */
+#include <stdbool.h>
 
+#include "driver/gpio.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_timer.h"
-#include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "esp_system.h"
 
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/task.h"
 
-#include "lwip/netdb.h"
-#include "lwip/sockets.h"
+#include "ecg_pipeline.h"
 
-#include "components/network/wifi/wifi_sta.h"
-#include "components/os/semaphore.h"
+#define RECORD_BUTTON_GPIO     GPIO_NUM_0
+#define RECORD_LED_GPIO        GPIO_NUM_21
+#define SD_DETECT_GPIO         GPIO_NUM_35
+#define RECORD_BUTTON_DEBOUNCE 50
+#define RECORD_BUTTON_POLL     20
+#define INIT_HEALTH_RETRY_MS   500
+#define IDLE_HEALTH_CHECK_MS   1000
+#define APP_MIN_FREE_HEAP      (20 * 1024)
+#define APP_MIN_STATE_STACK    512
+#define SD_CARD_PRESENT_LEVEL 1
+typedef enum {
+    ECG_STATE_INIT,
+    ECG_STATE_IDLE,
+    ECG_STATE_RECORD,
+} ecg_state_t;
 
-#include "drivers/adc/adc.h"
-#include "drivers/timer/timer.h"
-#include "drivers/sd_spi/sd_spi.h"
+static const char *TAG_APP = "ECG_APP";
+static ecg_state_t ecg_state = ECG_STATE_INIT;
+static TaskHandle_t state_task_handle = NULL;
+static volatile bool sd_detect_event_pending = false;
+static volatile uint32_t pipeline_event_pending = 0;
+static volatile ecg_pipeline_event_t last_pipeline_event = ECG_PIPELINE_EVENT_SD_FAULT;
+static volatile esp_err_t last_pipeline_error = ESP_OK;
+static TickType_t last_init_health_check = 0;
+static TickType_t last_idle_health_check = 0;
 
-#include "components/filter/HPfilter.h"
-#include "components/filter/Kalman.h"
-#include "components/filter/LPfilter.h"
-#include "components/filter/SBfilter.h"
-#include "components/ring_buffer/ring_buffer.h"
+#define PIPELINE_EVENT_BIT(event) (1UL << (uint32_t)(event))
 
-// ─────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────
-#define PC_IP           "192.168.0.244"
-#define PC_PORT         5005
-#define BATCH_SIZE      10
-#define TCP_RETRY_DELAY 3000
-
-// ─────────────────────────────────────────
-// Structs (packed — khớp Python "<hHI" / "<IB3x")
-// ─────────────────────────────────────────
-typedef struct __attribute__((packed)) {
-    int16_t  raw;
-    int16_t  filtered;   /* Python dùng uint16 H — nếu muốn signed đổi thành int16 cả hai đầu */
-    uint32_t ts_ms;
-} ecg_sample_t;
-
-typedef struct __attribute__((packed)) {
-    uint32_t    seq;
-    uint8_t     count;
-    uint8_t     _pad[3];
-    ecg_sample_t samples[BATCH_SIZE];
-} tcp_packet_t;
-
-// ─────────────────────────────────────────
-// Global
-// ─────────────────────────────────────────
-static const char *TAG_ECG = "ECG";
-static const char *TAG_TCP = "TCP";
-
-SemaphoreHandle_t adc_timer_semaphore_handle = NULL;
-adc_oneshot_unit_handle_t adc_handle   = NULL;
-gptimer_handle_t          adc_timer_handle = NULL;
-
-HPfilterType HPfilter;
-SBfilterType SBfilter;
-LPfilterType LPfilter;
-
-/* BUG FIX 2: tên biến nhất quán — chọn buf_handle, bỏ extern buf_handler */
-extern RingbufHandle_t buf_handle;
-
-/* Consumer activity flags - prevent ADC from pushing if no consumer is active */
-static volatile bool tcp_consumer_active = false;
-static volatile bool sd_consumer_active = false;
-
-// ─────────────────────────────────────────
-// Filter pipeline
-// ─────────────────────────────────────────
-static int16_t filtering(int data)
+static void IRAM_ATTR sd_detect_isr(void *arg)
 {
-    float f = (float)data;
-    HPfilter_writeInput(&HPfilter, f);  f = HPfilter_readOutput(&HPfilter);
-    SBfilter_writeInput(&SBfilter, f);  f = SBfilter_readOutput(&SBfilter);
-    LPfilter_writeInput(&LPfilter, f);  f = LPfilter_readOutput(&LPfilter);
-    return (int16_t)KFupdateEstimate(f);
-}
+    BaseType_t higher_priority_task_woken = pdFALSE;
 
-// ─────────────────────────────────────────
-// Task Core 1 — ADC + Filter → Ring Buffer
-// ─────────────────────────────────────────
-void ECG_Processing_Task(void *pvParameters)
-{
-    int raw = 0;
-    ecg_sample_t sample;
-
-    while (1) {
-        if (xSemaphoreTake(adc_timer_semaphore_handle, portMAX_DELAY) == pdTRUE) {
-            ESP_ERROR_CHECK(adc_oneshot_read(adc_handle, ADC_Channel, &raw));
-
-            sample.raw      = (int16_t)(raw - 2048);
-            sample.filtered = filtering(raw - 2048);
-            sample.ts_ms    = (uint32_t)(esp_timer_get_time() / 1000ULL);
-
-            /* Only push to ring buffer if a consumer task is active */
-            if (tcp_consumer_active || sd_consumer_active) {
-                if (xRingbufferSend(buf_handle, &sample, sizeof(sample), 0) != pdTRUE) {
-                    ESP_LOGW(TAG_ECG, "Ring buffer full, drop sample");
-                }
-            }
-        }
+    (void)arg;
+    sd_detect_event_pending = true;
+    if (state_task_handle != NULL) {
+        vTaskNotifyGiveFromISR(state_task_handle, &higher_priority_task_woken);
+    }
+    if (higher_priority_task_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
     }
 }
 
-// ─────────────────────────────────────────
-// Task Core 0 — TCP Send
-// ─────────────────────────────────────────
-void TCP_Send_Task(void *pvParameters)
+static void app_pipeline_event_handler(ecg_pipeline_event_t event,
+                                       esp_err_t error,
+                                       const char *detail)
 {
-    int sock = -1;
-    struct sockaddr_in dest_addr = {
-        .sin_addr.s_addr = inet_addr(PC_IP),
-        .sin_family      = AF_INET,
-        .sin_port        = htons(PC_PORT),
-    };
+    (void)detail;
 
-    tcp_packet_t packet;
-    uint32_t seq = 0;
-    while (1) {
-        // ── CONNECT ──────────────────────────
-        sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-        if (sock < 0) {
-            ESP_LOGE(TAG_TCP, "socket() failed: %d", errno);
-            vTaskDelay(pdMS_TO_TICKS(TCP_RETRY_DELAY));
-            continue;
-        }
+    last_pipeline_event = event;
+    last_pipeline_error = error;
+    pipeline_event_pending |= PIPELINE_EVENT_BIT(event);
 
-        ESP_LOGI(TAG_TCP, "Connecting to %s:%d...", PC_IP, PC_PORT);
-
-        if (connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) != 0) {
-            ESP_LOGE(TAG_TCP, "connect() failed: %d", errno);
-            close(sock);
-            sock = -1;
-            vTaskDelay(pdMS_TO_TICKS(TCP_RETRY_DELAY));
-            continue;
-        }
-
-        ESP_LOGI(TAG_TCP, "Connected");
-        tcp_consumer_active = true;  /* Signal ADC that TCP consumer is active */
-
-        // ── SEND LOOP ────────────────────────
-        while (1) {
-            packet.seq   = seq++;
-            packet.count = 0;
-
-            for (int i = 0; i < BATCH_SIZE; i++) {
-                size_t item_size;
-                ecg_sample_t *ptr = (ecg_sample_t *)xRingbufferReceive(
-                    buf_handle, &item_size, pdMS_TO_TICKS(1000));
-
-                if (ptr == NULL) break;   /* timeout → gửi packet nhỏ hơn */
-
-                memcpy(&packet.samples[i], ptr, sizeof(ecg_sample_t));
-                packet.count++;
-                vRingbufferReturnItem(buf_handle, ptr);
-            }
-
-            if (packet.count == 0) continue;
-
-            /* BUG FIX 3: dùng offsetof thay vì tính tay — luôn đúng dù struct thay đổi */
-            int to_send = (int)(offsetof(tcp_packet_t, samples)
-                                + packet.count * sizeof(ecg_sample_t));
-
-            if (send(sock, &packet, to_send, 0) < 0) {
-                ESP_LOGE(TAG_TCP, "send() failed → reconnect");
-                break;
-            }
-        }
-
-        // ── CLEANUP ──────────────────────────
-        tcp_consumer_active = false;  /* Signal ADC that TCP consumer is inactive */
-        close(sock);
-        sock = -1;
-        ESP_LOGW(TAG_TCP, "Disconnected → retry in %d ms...", TCP_RETRY_DELAY);
-        vTaskDelay(pdMS_TO_TICKS(TCP_RETRY_DELAY));
+    if (state_task_handle != NULL) {
+        xTaskNotifyGive(state_task_handle);
     }
 }
 
-// ─────────────────────────────────────────
-// Task — SD Write (ghi 100 samples vào SD)
-// ─────────────────────────────────────────
-void SD_Write_Task(void *pvParameters)
+static void app_storage_init(void)
 {
-    const char *filename = "/sdcard/ecg_data.bin";
-    tcp_packet_t sd_packet;
-    uint32_t sd_seq = 0;
-
-    // Chờ trước khi bắt đầu ghi
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    sd_consumer_active = true;  /* Signal ADC that SD consumer is active */
-
-    while (1) {
-        sd_packet.seq = sd_seq++;
-        sd_packet.count = 0;
-
-        // Lấy BATCH_SIZE samples từ ring buffer
-        for (int i = 0; i < BATCH_SIZE; i++) {
-            size_t item_size;
-            ecg_sample_t *ptr = (ecg_sample_t *)xRingbufferReceive(
-                buf_handle, &item_size, pdMS_TO_TICKS(500));
-
-            if (ptr == NULL) break;
-
-            memcpy(&sd_packet.samples[i], ptr, sizeof(ecg_sample_t));
-            sd_packet.count++;
-            vRingbufferReturnItem(buf_handle, ptr);
-        }
-
-        if (sd_packet.count > 0) {
-            int to_write = (int)(offsetof(tcp_packet_t, samples)
-                                 + sd_packet.count * sizeof(ecg_sample_t));
-
-            if (sd_spi_write(filename, &sd_packet, to_write) != ESP_OK) {
-                ESP_LOGW(TAG_ECG, "SD write failed");
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(100));  // Tránh chiếm CPU 100%
-    }
-}
-
-// ─────────────────────────────────────────
-// app_main
-// ─────────────────────────────────────────
-void app_main(void)
-{
-    // NVS
     esp_err_t ret = nvs_flash_init();
+
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
+
     ESP_ERROR_CHECK(ret);
+}
 
-    // Peripherals & Filters (khởi tạo TRƯỚC wifi để giảm thời gian chờ)
-    ADC_Init();
-    HPfilter_init(&HPfilter);
-    SBfilter_init(&SBfilter);
-    LPfilter_init(&LPfilter);
-    KalmanFilter_init(1.0f, 1.0f, 0.001f);
+static void app_controls_init(void)
+{
+    gpio_config_t button_cfg = {
+        .pin_bit_mask = 1ULL << RECORD_BUTTON_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&button_cfg));
 
-    Semaphore_Init(&adc_timer_semaphore_handle);
-    Timer_Init();
-    ring_buffer_init();
+    gpio_config_t led_cfg = {
+        .pin_bit_mask = 1ULL << RECORD_LED_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&led_cfg));
+    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
 
-    // SD Card
-    ESP_LOGI(TAG_ECG, "Initializing SD card...");
-    if (sd_spi_init() != ESP_OK) {
-        ESP_LOGE(TAG_ECG, "SD card failed — TCP only mode");
+    gpio_config_t sd_detect_cfg = {
+        .pin_bit_mask = 1ULL << SD_DETECT_GPIO,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&sd_detect_cfg));
+    esp_err_t isr_ret = gpio_install_isr_service(0);
+    if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(isr_ret);
     }
-    else
-    {
-        xTaskCreatePinnedToCore(SD_Write_Task,        "SD_Task",  4096, NULL, 2, NULL, 0);
+    ESP_ERROR_CHECK(gpio_isr_handler_add(SD_DETECT_GPIO, sd_detect_isr, NULL));
+}
+
+static bool record_button_pressed(void)
+{
+    static int stable_level = 1;
+    static int previous_level = 1;
+    static TickType_t last_change = 0;
+    int level = gpio_get_level(RECORD_BUTTON_GPIO);
+    TickType_t now = xTaskGetTickCount();
+
+    if (level != previous_level) {
+        previous_level = level;
+        last_change = now;
     }
 
-    // WiFi — BUG FIX 1: check return value, không spawn TCP task nếu fail
-    ESP_LOGI(TAG_TCP, "Connecting WiFi...");
-    if (!wifi_init_sta()) {
-        ESP_LOGE(TAG_TCP, "WiFi failed — halting. Check SSID/password.");
-        /* Reboot sau 5 giây thay vì treo vô ích */
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
+    if (level != stable_level
+        && (now - last_change) >= pdMS_TO_TICKS(RECORD_BUTTON_DEBOUNCE)) {
+        stable_level = level;
+        return stable_level == 0;
+    }
+
+    return false;
+}
+
+static bool app_health_check(const char *context)
+{
+    bool heap_ok = heap_caps_check_integrity_all(false);
+    uint32_t free_heap = esp_get_free_heap_size();
+    UBaseType_t state_stack = uxTaskGetStackHighWaterMark(NULL);
+    int sd_det_level = gpio_get_level(SD_DETECT_GPIO);
+
+    if (!heap_ok) {
+        ESP_LOGE(TAG_APP, "Health[%s]: heap integrity failed", context);
+        return false;
+    }
+
+    if (free_heap < APP_MIN_FREE_HEAP) {
+        ESP_LOGE(TAG_APP,
+                 "Health[%s]: low heap (%lu bytes)",
+                 context,
+                 (unsigned long)free_heap);
+        return false;
+    }
+
+    if (state_stack < APP_MIN_STATE_STACK) {
+        ESP_LOGE(TAG_APP,
+                 "Health[%s]: low state task stack (%lu words)",
+                 context,
+                 (unsigned long)state_stack);
+        return false;
+    }
+    if (gpio_get_level(SD_DETECT_GPIO) != SD_CARD_PRESENT_LEVEL) {
+        return false;
+    }
+    ESP_LOGD(TAG_APP,
+             "Health[%s]: OK heap=%lu stack=%lu sd_det=%d",
+             context,
+             (unsigned long)free_heap,
+             (unsigned long)state_stack,
+             sd_det_level);
+    return true;
+}
+
+static const char *pipeline_event_name(ecg_pipeline_event_t event)
+{
+    switch (event) {
+    case ECG_PIPELINE_EVENT_SD_FAULT:
+        return "SD_FAULT";
+    case ECG_PIPELINE_EVENT_ADC_FAULT:
+        return "ADC_FAULT";
+    case ECG_PIPELINE_EVENT_BUFFER_FAULT:
+        return "BUFFER_FAULT";
+    case ECG_PIPELINE_EVENT_TASK_FAULT:
+        return "TASK_FAULT";
+    case ECG_PIPELINE_EVENT_BLE_FAULT:
+        return "BLE_FAULT";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void enter_idle_state(void)
+{
+    ecg_pipeline_enter_idle();
+    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
+    ecg_state = ECG_STATE_IDLE;
+    ESP_LOGI(TAG_APP, "State: IDLE");
+}
+
+static void enter_init_state(void)
+{
+    ecg_pipeline_enter_init();
+    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
+    ecg_state = ECG_STATE_INIT;
+    last_init_health_check = 0;
+    ESP_LOGI(TAG_APP, "State: INIT (SD DET level=%d)",
+             gpio_get_level(SD_DETECT_GPIO));
+}
+
+static void enter_record_state(void)
+{
+    esp_err_t ret = ecg_pipeline_enter_recording();
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG_APP, "RECORD blocked (%s)", esp_err_to_name(ret));
+        enter_init_state();
         return;
     }
-    else
-    {
-        xTaskCreatePinnedToCore(TCP_Send_Task,        "TCP_Task", 4096, NULL, 3, NULL, 0);
+
+    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 1));
+    ecg_state = ECG_STATE_RECORD;
+    ESP_LOGI(TAG_APP, "State: RECORD");
+}
+
+static void ecg_state_task(void *pvParameters)
+{
+    (void)pvParameters;
+
+    while (1) {
+        TickType_t now = xTaskGetTickCount();
+
+        if (sd_detect_event_pending) {
+            sd_detect_event_pending = false;
+            enter_init_state();
+        }
+
+        if (pipeline_event_pending != 0) {
+            uint32_t events = pipeline_event_pending;
+            pipeline_event_pending = 0;
+            ESP_LOGW(TAG_APP,
+                     "Pipeline fault event(s)=0x%lx last=%s error=%s",
+                     (unsigned long)events,
+                     pipeline_event_name(last_pipeline_event),
+                     esp_err_to_name(last_pipeline_error));
+            if (events & (PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_SD_FAULT)
+                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_ADC_FAULT)
+                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_BUFFER_FAULT)
+                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_TASK_FAULT))) {
+                enter_init_state();
+            }
+        }
+
+        if (ecg_state == ECG_STATE_INIT
+            && (last_init_health_check == 0
+                || (now - last_init_health_check) >= pdMS_TO_TICKS(INIT_HEALTH_RETRY_MS))) {
+            last_init_health_check = now;
+            if (app_health_check("init")) {
+                enter_idle_state();
+            } else {
+                ESP_LOGW(TAG_APP, "INIT health check failed, staying in INIT");
+            }
+        }
+
+        if (ecg_state == ECG_STATE_IDLE
+            && (last_idle_health_check == 0
+                || (now - last_idle_health_check) >= pdMS_TO_TICKS(IDLE_HEALTH_CHECK_MS))) {
+            last_idle_health_check = now;
+            if (!app_health_check("idle")) {
+                enter_init_state();
+            }
+        }
+
+        if (record_button_pressed()) {
+            if (ecg_state == ECG_STATE_IDLE) {
+                enter_record_state();
+            } else if (ecg_state == ECG_STATE_RECORD) {
+                enter_idle_state();
+            }
+        }
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(RECORD_BUTTON_POLL));
     }
-    ESP_LOGI(TAG_TCP, "WiFi OK");
-    // Tasks
-    xTaskCreatePinnedToCore(ECG_Processing_Task, "ECG_Task", 4096, NULL, 5, NULL, 1);
+}
+
+void app_main(void)
+{
+    app_storage_init();
+    app_controls_init();
+    ecg_pipeline_set_event_callback(app_pipeline_event_handler);
+
+    if (ecg_pipeline_init() != ESP_OK) {
+        ESP_LOGE(TAG_APP, "ECG pipeline init failed");
+        return;
+    }
+
+    ecg_pipeline_start();
+    enter_idle_state();
+
+    if (xTaskCreatePinnedToCore(ecg_state_task, "State_Task", 3072, NULL, 2,
+                                &state_task_handle, 0) != pdPASS) {
+        ESP_LOGE(TAG_APP, "State task creation failed");
+    }
 }

@@ -1,6 +1,7 @@
 #ifndef __SD_SPI_H__
 #define __SD_SPI_H__
 
+#include <stdbool.h>
 #include <driver/spi_master.h>
 #include <esp_err.h>
 #include <stdio.h>
@@ -10,6 +11,9 @@
  * @return ESP_OK nếu thành công
  */
 esp_err_t sd_spi_init(void);
+
+/** Trả về true khi thẻ đã được mount. */
+bool sd_spi_is_mounted(void);
 
 /**
  * Ghi dữ liệu vào file trên SD

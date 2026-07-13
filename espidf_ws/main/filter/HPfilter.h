@@ -20,30 +20,34 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 /*
 Generated code is based on the following filter design:
-<micro.DSP.FilterDocument sampleFrequency="#500" arithmetic="float" biquads="Direct1" classname="HPfilter" inputMax="#1" inputShift="#15" >
-  <micro.DSP.IirButterworthFilter N="#2" bandType="h" w1="#0.0001" w2="#0.4" stopbandRipple="#undefined" passbandRipple="#undefined" transitionRatio="#undefined" >
+<micro.DSP.FilterDocument sampleFrequency="#360" arithmetic="float" biquads="Direct1" classname="HPfilter" inputMax="#1" inputShift="#-1" >
+  <micro.DSP.IirButterworthFilter N="#4" bandType="h" w1="#0.001388888888888889" w2="#0.4" stopbandRipple="#undefined" passbandRipple="#undefined" transitionRatio="#undefined" >
     <micro.DSP.FilterStructure coefficientBits="#0" variableBits="#0" accumulatorBits="#0" biquads="Direct1" >
+      <micro.DSP.FilterSection form="Direct1" historyType="Double" accumulatorBits="#0" variableBits="#0" coefficientBits="#0" />
       <micro.DSP.FilterSection form="Direct1" historyType="Double" accumulatorBits="#0" variableBits="#0" coefficientBits="#0" />
     </micro.DSP.FilterStructure>
     <micro.DSP.PoleOrZeroContainer >
-      <micro.DSP.PoleOrZero i="#0.00044409096018082364" r="#0.9995557117353978" isPoint="#true" isPole="#true" isZero="#false" symmetry="c" N="#1" cascade="#0" />
+      <micro.DSP.PoleOrZero i="#0.008035433203022238" r="#0.9966336643866542" isPoint="#true" isPole="#true" isZero="#false" symmetry="c" N="#1" cascade="#1" />
+      <micro.DSP.PoleOrZero i="#0.003312791942241823" r="#0.9919644403591222" isPoint="#true" isPole="#true" isZero="#false" symmetry="c" N="#1" cascade="#0" />
       <micro.DSP.PoleOrZero i="#0" r="#1" isPoint="#true" isPole="#false" isZero="#true" symmetry="r" N="#1" cascade="#0" />
       <micro.DSP.PoleOrZero i="#0" r="#1" isPoint="#true" isPole="#false" isZero="#true" symmetry="r" N="#1" cascade="#0" />
+      <micro.DSP.PoleOrZero i="#0" r="#1" isPoint="#true" isPole="#false" isZero="#true" symmetry="r" N="#1" cascade="#1" />
+      <micro.DSP.PoleOrZero i="#0" r="#1" isPoint="#true" isPole="#false" isZero="#true" symmetry="r" N="#1" cascade="#1" />
     </micro.DSP.PoleOrZeroContainer>
     <micro.DSP.GenericC.CodeGenerator generateTestCases="#false" />
-    <micro.DSP.GainControl magnitude="#1" frequency="#0.3564453125" peak="#true" />
+    <micro.DSP.GainControl magnitude="#1" frequency="#0.1689453125" peak="#true" />
   </micro.DSP.IirButterworthFilter>
 </micro.DSP.FilterDocument>
 
 */
 
-static const int HPfilter_numStages = 1;
-static const int HPfilter_coefficientLength = 5;
-extern float HPfilter_coefficients[5];
+static const int HPfilter_numStages = 2;
+static const int HPfilter_coefficientLength = 10;
+extern float HPfilter_coefficients[10];
 
 typedef struct
 {
-	float state[4];
+	float state[8];
 	float output;
 } HPfilterType;
 

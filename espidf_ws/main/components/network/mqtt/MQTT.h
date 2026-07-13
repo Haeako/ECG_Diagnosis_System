@@ -4,6 +4,7 @@
 */
 
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -23,6 +24,8 @@
 #define MQTT_PATH "/mqtt"
 #define ACCESS_TOKEN "pwnvut1d1q3z1q0w6ciw"
 #define TOPIC "v1/devices/me/telemetry"
+
+extern volatile bool mqtt_is_connected;
 
 #if CONFIG_EXAMPLE_BROKER_CERTIFICATE_OVERRIDDEN
 static const char cert_override_pem[] =

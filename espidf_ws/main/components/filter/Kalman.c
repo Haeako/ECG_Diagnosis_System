@@ -28,6 +28,9 @@ void KalmanFilter_init(float mea_e, float est_e, float q)
   _err_measure = mea_e;
   _err_estimate = est_e;
   _q = q;
+  _current_estimate = 0.0f;
+  _last_estimate = 0.0f;
+  _kalman_gain = 0.0f;
 }
 
 float KFupdateEstimate(float mea)

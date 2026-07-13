@@ -20,8 +20,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 /*
 Generated code is based on the following filter design:
-<micro.DSP.FilterDocument sampleFrequency="#500" arithmetic="float" biquads="Direct1" classname="LPfilter" inputMax="#1" inputShift="#15" >
-  <micro.DSP.IirButterworthFilter N="#4" bandType="l" w1="#0.3" w2="#0.4" stopbandRipple="#undefined" passbandRipple="#undefined" transitionRatio="#undefined" >
+<micro.DSP.FilterDocument sampleFrequency="#360" arithmetic="float" biquads="Direct1" classname="LPfilter" inputMax="#1" inputShift="#15" >
+  <micro.DSP.IirButterworthFilter N="#4" bandType="l" w1="#0.25" w2="#0.4" stopbandRipple="#undefined" passbandRipple="#undefined" transitionRatio="#undefined" >
     <micro.DSP.FilterStructure coefficientBits="#0" variableBits="#0" accumulatorBits="#0" biquads="Direct1" >
       <micro.DSP.FilterSection form="Direct1" historyType="Double" accumulatorBits="#0" variableBits="#0" coefficientBits="#0" />
       <micro.DSP.FilterSection form="Direct1" historyType="Double" accumulatorBits="#0" variableBits="#0" coefficientBits="#0" />

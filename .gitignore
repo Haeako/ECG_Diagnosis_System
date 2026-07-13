@@ -77,3 +77,12 @@ Desktop.ini
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
 stm32/ECG/Middlewares/wavelib
+espidf_ws/*.csv
+espidf_ws/data/
+espidf_ws/ECG_FILTER_POWER_REPORT.md
+espidf_ws/.vscode
+espidf_ws/pre_move_data
+espidf_ws/qrs_baseline_results/
+espidf_ws/qrs_results
+espidf_ws/visualize
+espidf_ws/pre_move_data_preview.svg

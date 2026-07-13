@@ -78,9 +78,11 @@ void mqtt_init(void)
                 .path = MQTT_PATH, // "/api/v1/mqtt" 
             },
             .verification = {
-                // Tự động dùng bộ chứng chỉ có sẵn trong ESP32 để tin cậy Cloudflare
-                // Không cần file .pem thủ công
+#if CONFIG_EXAMPLE_BROKER_CERTIFICATE_OVERRIDDEN
+                .certificate = cert_override_pem,
+#else
                 .crt_bundle_attach = esp_crt_bundle_attach,
+#endif
             },
         },
         .credentials = {

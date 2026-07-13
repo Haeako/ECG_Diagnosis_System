@@ -10,3 +10,4 @@
 #define ADC_VoltRange           ADC_ATTEN_DB_12
 
 void ADC_Init(void);
+void ADC_Deinit(void);

@@ -2,27 +2,34 @@
   "configurations": [
     {
       "name": "ESP-IDF",
-      "compilerPath": "D:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20251107\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
-      "compileCommands": "d:\\Downloads\\ECG_Diagnosis_System-master\\ECG_Diagnosis_System-master\\build\\compile_commands.json",
+      "compilerPath": "C:/Espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc.exe",
+      "compileCommands": "d:\\DOC\\ECG_Diagnosis_System\\espidf_ws\\build\\compile_commands.json",
       "includePath": [
         "${workspaceFolder}",
         "${workspaceFolder}/main",
         "${workspaceFolder}/build/config",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/hal/include",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/hal/esp32/include",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/esp_adc/include",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/esp_common/include",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/log/include",
-        "D:/Espressif/frameworks/esp-idf-v5.5.3/components/**"
+        "${workspaceFolder}/managed_components/espressif__mqtt/include",
+        "C:/esp/v6.0.1/esp-idf/components/esp_libc/platform_include",
+        "C:/esp/v6.0.1/esp-idf/components/freertos/config/include",
+        "C:/esp/v6.0.1/esp-idf/components/freertos/config/include/freertos",
+        "C:/esp/v6.0.1/esp-idf/components/freertos/config/xtensa/include",
+        "C:/esp/v6.0.1/esp-idf/components/freertos/FreeRTOS-Kernel/include",
+        "C:/esp/v6.0.1/esp-idf/components/esp_event/include",
+        "C:/esp/v6.0.1/esp-idf/components/hal/include",
+        "C:/esp/v6.0.1/esp-idf/components/hal/esp32/include",
+        "C:/esp/v6.0.1/esp-idf/components/esp_adc/include",
+        "C:/esp/v6.0.1/esp-idf/components/esp_common/include",
+        "C:/esp/v6.0.1/esp-idf/components/log/include",
+        "C:/esp/v6.0.1/esp-idf/components/**"
       ],
       "defines": [
         "ESP_PLATFORM",
-        "IDF_VER=\"v5.5.3\""
+        "IDF_VER=\"v6.0.1\""
       ],
       "browse": {
         "path": [
           "${workspaceFolder}",
-          "D:/Espressif/frameworks/esp-idf-v5.5.3/components"
+          "C:/esp/v6.0.1/esp-idf/components/"
         ],
         "limitSymbolsToIncludedHeaders": false
       }
