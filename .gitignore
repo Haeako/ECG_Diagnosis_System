@@ -22,7 +22,7 @@ build/
 *.o
 *.a
 *.out
-*.exe # For any host-side utilities compiled on Windows
+*.exe
 
 # ESP-IDF specific build outputs
 *.bin
@@ -77,12 +77,22 @@ Desktop.ini
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
 stm32/ECG/Middlewares/wavelib
-espidf_ws/*.csv
-espidf_ws/data/
-espidf_ws/ECG_FILTER_POWER_REPORT.md
-espidf_ws/.vscode
-espidf_ws/pre_move_data
-espidf_ws/qrs_baseline_results/
-espidf_ws/qrs_results
-espidf_ws/visualize
-espidf_ws/pre_move_data_preview.svg
+firmware/esp32/*.csv
+firmware/esp32/data/
+firmware/esp32/ECG_FILTER_POWER_REPORT.md
+firmware/esp32/.vscode
+firmware/esp32/pre_move_data
+firmware/esp32/qrs_baseline_results/
+firmware/esp32/qrs_results
+firmware/esp32/visualize
+firmware/esp32/pre_move_data_preview.svg
+
+# Paper datasets, generated scorecards, and model artifacts
+data/*
+!data/README.md
+outputs/*
+!outputs/.gitkeep
+checkpoints/
+*.pkl
+*.npy
+*.npz
