@@ -197,6 +197,66 @@ void ecg_pipeline_enter_init(void)
     ESP_LOGI(TAG_ECG, "Pipeline reset to INIT");
 }
 
+esp_err_t ecg_pipeline_recover_from_event(ecg_pipeline_event_t event)
+{
+    esp_err_t ret = ESP_OK;
+
+    ESP_LOGW(TAG_ECG, "Recovering pipeline from event=%d", event);
+
+    record_active = false;
+    Timer_Stop();
+
+    switch (event) {
+    case ECG_PIPELINE_EVENT_SD_FAULT:
+        if (sd_access_mutex != NULL) {
+            xSemaphoreTake(sd_access_mutex, portMAX_DELAY);
+            sd_spi_close();
+            xSemaphoreGive(sd_access_mutex);
+        }
+        break;
+
+    case ECG_PIPELINE_EVENT_ADC_FAULT:
+        ADC_Deinit();
+        ADC_Init();
+        ADC_Deinit();
+        break;
+
+    case ECG_PIPELINE_EVENT_BUFFER_FAULT:
+        /*
+         * Let sd_write_task leave its short receive/write cycle before replacing
+         * the global ring buffer handle. Then suspend it briefly so the handle
+         * cannot be used while the buffer is deleted and recreated.
+         */
+        vTaskDelay(pdMS_TO_TICKS(600));
+        if (sd_task_handle != NULL) {
+            vTaskSuspend(sd_task_handle);
+        }
+        if (!ring_buffer_reset()) {
+            ret = ESP_ERR_NO_MEM;
+        }
+        if (sd_task_handle != NULL) {
+            vTaskResume(sd_task_handle);
+        }
+        break;
+
+    case ECG_PIPELINE_EVENT_TASK_FAULT:
+        ESP_LOGW(TAG_ECG,
+                 "Task fault recovery requires system-level restart or manual retry");
+        ret = ESP_FAIL;
+        break;
+
+    case ECG_PIPELINE_EVENT_BLE_FAULT:
+        ESP_LOGW(TAG_ECG, "BLE fault is non-critical for SD recording pipeline");
+        break;
+
+    default:
+        ret = ESP_ERR_INVALID_ARG;
+        break;
+    }
+
+    return ret;
+}
+
 static void ecg_processing_task(void *pvParameters)
 {
     int raw = 0;
