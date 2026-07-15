@@ -8,10 +8,11 @@ typedef struct {
     uint32_t timestamp_ms;
     uint16_t raw_adc;
     int16_t raw_centered;
-    /* Moving-average estimate of slow baseline wander. */
+    /* Zero: the breakout board already provides the analog 0.5 Hz HPF. */
     int16_t baseline;
-    /* Baseline-removed signal: raw_centered - baseline. */
+    /* Same as raw_centered; retained for CSV/BLE compatibility. */
     int16_t corrected;
+    /* Causal aggressive 5-18 Hz QRS-band signal, not morphology-preserving. */
     int16_t filtered;
     uint8_t is_peak;
     uint32_t r_peak_timestamp_ms;

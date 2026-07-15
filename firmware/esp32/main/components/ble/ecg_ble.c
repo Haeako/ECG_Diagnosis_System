@@ -251,7 +251,9 @@ void ecg_ble_notify(const ecg_record_t *sample)
     last_notify_ms = sample->timestamp_ms;
 
     ecg_ble_packet_t packet = {
-        .timestamp_ms = sample->timestamp_ms,
+        /* Peak packets carry aligned R time; regular packets carry sample time. */
+        .timestamp_ms = sample->is_peak && sample->r_peak_timestamp_ms != 0
+            ? sample->r_peak_timestamp_ms : sample->timestamp_ms,
         .filtered = sample->filtered,
         .corrected = sample->corrected,
         .raw_adc = sample->raw_adc,

@@ -1,22 +1,63 @@
 #include "ecg_signal.h"
 
+#include <math.h>
 #include <string.h>
 
-#include "components/filter/HPfilter.h"
-#include "components/filter/Kalman.h"
-#include "components/filter/LPfilter.h"
-#include "components/filter/SBfilter.h"
 #include "components/afib/afib_detector.h"
 
-#define PAN_REFRACTORY_MS  400
-#define PAN_R_MIN_ABS     900.0f
-#define BPM_UPDATE_MS     5000
-#define ADC_BASELINE      2048
-#define BASELINE_WINDOW_SAMPLES  360
+/* Breakout board already provides an analog 0.5-40 Hz band-pass. */
+#define ADC_BASELINE             2048
+#define ECG_SAMPLE_RATE_HZ       360U
+#define QRS_MA_SAMPLES           36U   /* 100 ms */
+#define BEAT_MA_SAMPLES          216U  /* 600 ms */
+#define MIN_BLOCK_SAMPLES        22U   /* 60 ms */
+#define DETECTOR_WARMUP_SAMPLES  126U  /* 350 ms: reject startup/P-wave */
+#define RAW_HISTORY_SAMPLES      128U
+#define ALIGN_BACK_MS            90U
+#define ALIGN_FORWARD_MS         15U
+#define PAN_REFRACTORY_MS        300U
+#define BPM_UPDATE_MS            5000U
+#define TWO_MA_BETA              0.08f
+#define PAN_THRESHOLD_FRACTION   0.15f
+#define LEVEL_NEW_WEIGHT         0.125f
+#define LEVEL_OLD_WEIGHT         0.875f
 
 typedef struct {
-    float signal_level;
-    float noise_level;
+    float b0, b1, b2, a1, a2;
+    float z1, z2;
+} biquad_t;
+
+typedef struct {
+    float values[BEAT_MA_SAMPLES];
+    float sum;
+    uint16_t index;
+    uint16_t count;
+    uint16_t window;
+} energy_ma_t;
+
+typedef struct {
+    int16_t centered[RAW_HISTORY_SAMPLES];
+    uint32_t timestamp_ms[RAW_HISTORY_SAMPLES];
+    uint16_t index;
+    uint16_t count;
+} raw_history_t;
+
+typedef struct {
+    biquad_t highpass;
+    biquad_t lowpass;
+    energy_ma_t qrs_ma;
+    energy_ma_t beat_ma;
+    raw_history_t raw_history;
+    uint32_t sample_count;
+    float mean_energy;
+    bool in_block;
+    uint16_t block_samples;
+    float block_candidate_energy;
+    float block_largest_bandpass;
+    uint32_t block_filtered_peak_ms;
+    bool pan_initialized;
+    float pan_signal_level;
+    float pan_noise_level;
     uint32_t last_peak_ms;
     uint32_t current_peak_ms;
     uint16_t current_rr_ms;
@@ -25,173 +66,239 @@ typedef struct {
     uint32_t rr_sum_ms;
     uint16_t rr_count;
     uint16_t bpm;
-    float previous_abs;
-    float candidate_abs;
-    uint32_t candidate_ms;
-} pan_tompkins_t;
+} qrs_detector_t;
 
-typedef struct {
-    int16_t buffer[BASELINE_WINDOW_SAMPLES];
-    int64_t sum;
-    uint16_t index;
-    uint16_t count;
-} moving_average_t;
+static qrs_detector_t detector;
 
-static HPfilterType hp_filter;
-static SBfilterType sb_filter;
-static LPfilterType lp_filter;
-static pan_tompkins_t pan_detector;
-static moving_average_t baseline_filter;
-
-static void moving_average_reset(moving_average_t *filter)
+static float biquad_push(biquad_t *filter, float input)
 {
-    memset(filter, 0, sizeof(*filter));
+    float output = filter->b0 * input + filter->z1;
+    filter->z1 = filter->b1 * input - filter->a1 * output + filter->z2;
+    filter->z2 = filter->b2 * input - filter->a2 * output;
+    return output;
 }
 
-static int16_t moving_average_push(moving_average_t *filter, int16_t sample)
+static void energy_ma_init(energy_ma_t *average, uint16_t window)
 {
-    if (filter->count < BASELINE_WINDOW_SAMPLES) {
-        filter->buffer[filter->index] = sample;
-        filter->sum += sample;
-        filter->count++;
+    memset(average, 0, sizeof(*average));
+    average->window = window;
+}
+
+static float energy_ma_push(energy_ma_t *average, float value)
+{
+    if (average->count < average->window) {
+        average->values[average->index] = value;
+        average->sum += value;
+        average->count++;
     } else {
-        filter->sum -= filter->buffer[filter->index];
-        filter->buffer[filter->index] = sample;
-        filter->sum += sample;
+        average->sum -= average->values[average->index];
+        average->values[average->index] = value;
+        average->sum += value;
+    }
+    average->index = (uint16_t)((average->index + 1U) % average->window);
+    return average->sum / (float)average->count;
+}
+
+static void raw_history_push(raw_history_t *history, int16_t centered,
+                             uint32_t now_ms)
+{
+    history->centered[history->index] = centered;
+    history->timestamp_ms[history->index] = now_ms;
+    history->index = (uint16_t)((history->index + 1U) % RAW_HISTORY_SAMPLES);
+    if (history->count < RAW_HISTORY_SAMPLES) history->count++;
+}
+
+static uint32_t align_r_peak(const raw_history_t *history,
+                             uint32_t filtered_peak_ms)
+{
+    uint32_t from_ms = filtered_peak_ms > ALIGN_BACK_MS
+        ? filtered_peak_ms - ALIGN_BACK_MS : 0U;
+    uint32_t to_ms = filtered_peak_ms + ALIGN_FORWARD_MS;
+    int16_t best_value = INT16_MIN;
+    uint32_t best_ms = filtered_peak_ms;
+
+    for (uint16_t offset = 0; offset < history->count; ++offset) {
+        uint16_t slot = (uint16_t)((history->index + RAW_HISTORY_SAMPLES
+            - history->count + offset) % RAW_HISTORY_SAMPLES);
+        uint32_t timestamp = history->timestamp_ms[slot];
+        if (timestamp >= from_ms && timestamp <= to_ms
+            && history->centered[slot] > best_value) {
+            best_value = history->centered[slot];
+            best_ms = timestamp;
+        }
+    }
+    return best_ms;
+}
+
+static int16_t clamp_int16(float value)
+{
+    if (value > 32767.0f) return INT16_MAX;
+    if (value < -32768.0f) return INT16_MIN;
+    return (int16_t)value;
+}
+
+static void update_bpm_window(uint32_t now_ms)
+{
+    if ((now_ms - detector.bpm_window_start_ms) < BPM_UPDATE_MS) return;
+    if (detector.rr_count > 0U && detector.rr_sum_ms > 0U) {
+        detector.bpm = (uint16_t)((60000UL * detector.rr_count)
+            / detector.rr_sum_ms);
+    }
+    detector.rr_sum_ms = 0U;
+    detector.rr_count = 0U;
+    detector.bpm_window_start_ms = now_ms;
+}
+
+static bool pan_accept_block(void)
+{
+    float candidate = detector.block_candidate_energy;
+    float threshold;
+    uint32_t peak_ms = align_r_peak(&detector.raw_history,
+                                    detector.block_filtered_peak_ms);
+
+    if (!detector.pan_initialized) {
+        detector.pan_signal_level = candidate;
+        threshold = PAN_THRESHOLD_FRACTION * candidate;
+        detector.pan_initialized = true;
+    } else {
+        threshold = detector.pan_noise_level + PAN_THRESHOLD_FRACTION
+            * (detector.pan_signal_level - detector.pan_noise_level);
     }
 
-    filter->index = (filter->index + 1) % BASELINE_WINDOW_SAMPLES;
-    return (int16_t)(filter->sum / filter->count);
+    /* Refractory duplicates/T waves must not inflate the learned noise. */
+    if (detector.last_peak_ms != 0U
+        && (peak_ms - detector.last_peak_ms) < PAN_REFRACTORY_MS) {
+        return false;
+    }
+    if (candidate < threshold) {
+        detector.pan_noise_level = LEVEL_NEW_WEIGHT * candidate
+            + LEVEL_OLD_WEIGHT * detector.pan_noise_level;
+        return false;
+    }
+
+    /* Do not let an ADC-clipped spike lock the adaptive threshold high. */
+    float learned = candidate;
+    if (detector.pan_signal_level > 0.0f
+        && learned > 2.0f * detector.pan_signal_level) {
+        learned = 2.0f * detector.pan_signal_level;
+    }
+    detector.pan_signal_level = LEVEL_NEW_WEIGHT * learned
+        + LEVEL_OLD_WEIGHT * detector.pan_signal_level;
+
+    detector.current_peak_ms = peak_ms;
+    if (detector.last_peak_ms != 0U) {
+        uint32_t rr_ms = peak_ms - detector.last_peak_ms;
+        if (rr_ms >= 250U && rr_ms <= 2000U) {
+            detector.current_rr_ms = (uint16_t)rr_ms;
+            detector.current_instant_bpm = (uint16_t)(60000UL / rr_ms);
+            detector.rr_sum_ms += rr_ms;
+            detector.rr_count++;
+        }
+    }
+    detector.last_peak_ms = peak_ms;
+    return true;
 }
 
-static int16_t ecg_filter_sample(int16_t corrected)
+static bool qrs_detector_push(int16_t centered, uint32_t now_ms,
+                              int16_t *filtered_out)
 {
-    float filtered = (float)corrected;
+    float bandpass = biquad_push(&detector.highpass, (float)centered);
+    bandpass = biquad_push(&detector.lowpass, bandpass);
+    float positive = bandpass > 0.0f ? bandpass : 0.0f;
+    float energy = positive * positive;
+    float ma_qrs = energy_ma_push(&detector.qrs_ma, energy);
+    float ma_beat = energy_ma_push(&detector.beat_ma, energy);
 
-    HPfilter_writeInput(&hp_filter, filtered);
-    filtered = HPfilter_readOutput(&hp_filter);
-    SBfilter_writeInput(&sb_filter, filtered);
-    filtered = SBfilter_readOutput(&sb_filter);
-    LPfilter_writeInput(&lp_filter, filtered);
-    filtered = LPfilter_readOutput(&lp_filter);
+    raw_history_push(&detector.raw_history, centered, now_ms);
+    *filtered_out = clamp_int16(bandpass);
+    detector.current_peak_ms = 0U;
+    detector.current_rr_ms = 0U;
+    detector.current_instant_bpm = 0U;
 
-    return (int16_t)KFupdateEstimate(filtered);
-}
-
-/*
- * R-peak detector on the filtered ECG. It waits for a local positive/negative
- * extreme and uses adaptive amplitude plus refractory time to avoid detecting
- * the T wave after the QRS complex.
- */
-static bool pan_tompkins_peak(int16_t filtered, uint32_t now_ms)
-{
-    float current_abs = filtered < 0 ? -(float)filtered : (float)filtered;
-    float threshold = pan_detector.noise_level
-        + 0.60f * (pan_detector.signal_level - pan_detector.noise_level);
+    detector.sample_count++;
+    uint32_t mean_count = detector.sample_count < 3600U
+        ? detector.sample_count : 3600U;
+    detector.mean_energy += (energy - detector.mean_energy) / (float)mean_count;
+    float threshold = ma_beat + TWO_MA_BETA * detector.mean_energy;
+    bool above = detector.sample_count >= DETECTOR_WARMUP_SAMPLES
+        && ma_qrs > threshold;
     bool is_peak = false;
-    bool candidate_is_local_extreme;
 
-    pan_detector.current_peak_ms = 0;
-    pan_detector.current_rr_ms = 0;
-    pan_detector.current_instant_bpm = 0;
-
-    if (pan_detector.signal_level == 0.0f) {
-        pan_detector.signal_level = current_abs;
-        threshold = PAN_R_MIN_ABS;
-    }
-
-    if (threshold < PAN_R_MIN_ABS) {
-        threshold = PAN_R_MIN_ABS;
-    }
-
-    candidate_is_local_extreme =
-        pan_detector.candidate_abs >= pan_detector.previous_abs
-        && pan_detector.candidate_abs > current_abs;
-
-    if (candidate_is_local_extreme
-        && pan_detector.candidate_abs >= threshold
-        && (pan_detector.last_peak_ms == 0
-            || (pan_detector.candidate_ms - pan_detector.last_peak_ms) >= PAN_REFRACTORY_MS)) {
-        uint32_t rr_ms = pan_detector.candidate_ms - pan_detector.last_peak_ms;
-
-        is_peak = true;
-        pan_detector.signal_level = 0.125f * pan_detector.candidate_abs
-            + 0.875f * pan_detector.signal_level;
-
-        pan_detector.current_peak_ms = pan_detector.candidate_ms;
-        if (pan_detector.last_peak_ms != 0 && rr_ms >= 250 && rr_ms <= 2000) {
-            pan_detector.rr_sum_ms += rr_ms;
-            pan_detector.rr_count++;
-            pan_detector.current_rr_ms = (uint16_t)rr_ms;
-            pan_detector.current_instant_bpm = (uint16_t)(60000UL / rr_ms);
+    if (above) {
+        float magnitude = fabsf(bandpass);
+        if (!detector.in_block) {
+            detector.in_block = true;
+            detector.block_samples = 0U;
+            detector.block_candidate_energy = ma_qrs;
+            detector.block_largest_bandpass = magnitude;
+            detector.block_filtered_peak_ms = now_ms;
         }
-        pan_detector.last_peak_ms = pan_detector.candidate_ms;
-    } else if (candidate_is_local_extreme) {
-        pan_detector.noise_level = 0.125f * pan_detector.candidate_abs
-            + 0.875f * pan_detector.noise_level;
-    }
-
-    pan_detector.previous_abs = pan_detector.candidate_abs;
-    pan_detector.candidate_abs = current_abs;
-    pan_detector.candidate_ms = now_ms;
-
-    if ((now_ms - pan_detector.bpm_window_start_ms) >= BPM_UPDATE_MS) {
-        if (pan_detector.rr_count > 0 && pan_detector.rr_sum_ms > 0) {
-            pan_detector.bpm = (uint16_t)(
-                (60000UL * pan_detector.rr_count) / pan_detector.rr_sum_ms);
+        detector.block_samples++;
+        if (ma_qrs > detector.block_candidate_energy) {
+            detector.block_candidate_energy = ma_qrs;
         }
-        pan_detector.rr_sum_ms = 0;
-        pan_detector.rr_count = 0;
-        pan_detector.bpm_window_start_ms = now_ms;
+        if (magnitude > detector.block_largest_bandpass) {
+            detector.block_largest_bandpass = magnitude;
+            detector.block_filtered_peak_ms = now_ms;
+        }
+    } else if (detector.in_block) {
+        if (detector.block_samples >= MIN_BLOCK_SAMPLES) {
+            is_peak = pan_accept_block();
+        }
+        detector.in_block = false;
     }
 
+    update_bpm_window(now_ms);
     return is_peak;
 }
 
 void ecg_signal_init(uint32_t now_ms)
 {
-    HPfilter_init(&hp_filter);
-    SBfilter_init(&sb_filter);
-    LPfilter_init(&lp_filter);
-    KalmanFilter_init(1.0f, 1.0f, 0.001f);
     afib_detector_init();
     ecg_signal_reset(now_ms);
 }
 
 void ecg_signal_reset(uint32_t now_ms)
 {
-    HPfilter_reset(&hp_filter);
-    SBfilter_reset(&sb_filter);
-    LPfilter_reset(&lp_filter);
-    KalmanFilter_init(1.0f, 1.0f, 0.001f);
-    moving_average_reset(&baseline_filter);
+    memset(&detector, 0, sizeof(detector));
+    /* 2nd-order Butterworth sections designed for fs=360 Hz. */
+    detector.highpass = (biquad_t){
+        .b0 = 0.940156963896f, .b1 = -1.88031392779f,
+        .b2 = 0.940156963896f, .a1 = -1.87672952684f,
+        .a2 = 0.883898328745f,
+    };
+    detector.lowpass = (biquad_t){
+        .b0 = 0.0200833655642f, .b1 = 0.0401667311284f,
+        .b2 = 0.0200833655642f, .a1 = -1.5610180758f,
+        .a2 = 0.641351538058f,
+    };
+    energy_ma_init(&detector.qrs_ma, QRS_MA_SAMPLES);
+    energy_ma_init(&detector.beat_ma, BEAT_MA_SAMPLES);
+    detector.bpm_window_start_ms = now_ms;
     afib_detector_reset();
-
-    memset(&pan_detector, 0, sizeof(pan_detector));
-    pan_detector.bpm_window_start_ms = now_ms;
 }
 
 ecg_record_t ecg_signal_process(int raw_adc, uint32_t now_ms)
 {
     int16_t raw_centered = (int16_t)(raw_adc - ADC_BASELINE);
-    int16_t baseline = moving_average_push(&baseline_filter, raw_centered);
-    int16_t corrected = raw_centered - baseline;
-
+    int16_t filtered = 0;
+    bool is_peak = qrs_detector_push(raw_centered, now_ms, &filtered);
     ecg_record_t sample = {
         .timestamp_ms = now_ms,
         .raw_adc = (uint16_t)raw_adc,
         .raw_centered = raw_centered,
-        .baseline = baseline,
-        .corrected = corrected,
-        .filtered = ecg_filter_sample(corrected),
+        /* Analog HPF already removes baseline wander. */
+        .baseline = 0,
+        .corrected = raw_centered,
+        .filtered = filtered,
+        .is_peak = is_peak ? 1U : 0U,
+        .r_peak_timestamp_ms = detector.current_peak_ms,
+        .rr_interval_ms = detector.current_rr_ms,
+        .instant_bpm = detector.current_instant_bpm,
+        .bpm = detector.bpm,
     };
 
-    sample.is_peak = pan_tompkins_peak(sample.filtered, now_ms) ? 1 : 0;
-    sample.r_peak_timestamp_ms = pan_detector.current_peak_ms;
-    sample.rr_interval_ms = pan_detector.current_rr_ms;
-    sample.instant_bpm = pan_detector.current_instant_bpm;
-    sample.bpm = pan_detector.bpm;
-    if (sample.rr_interval_ms > 0) {
+    if (sample.rr_interval_ms > 0U) {
         afib_result_t afib = afib_detector_process_rr(sample.rr_interval_ms);
         sample.afib_status = (uint8_t)afib.status;
         sample.afib_score = afib.score;
@@ -200,6 +307,5 @@ ecg_record_t ecg_signal_process(int raw_adc, uint32_t now_ms)
         sample.afib_status = (uint8_t)afib.status;
         sample.afib_score = afib.score;
     }
-
     return sample;
 }

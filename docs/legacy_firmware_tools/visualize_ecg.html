@@ -19,7 +19,7 @@
     .chart { margin-bottom: 15px; padding: 12px; background: #0c1822; border: 1px solid #213544; border-radius: 10px; }
     .chart-title { margin: 0 0 7px 54px; color: #9fc7df; font-size: 13px; }
     canvas { display: block; width: 100%; height: 190px; }
-    .hint { font-size: 12px; color: #7594a8; }
+    .hint { margin-top: 8px; font-size: 12px; color: #7594a8; }
   </style>
 </head>
 <body>
@@ -41,7 +41,7 @@
       <button id="reset">Về đầu</button>
       <span id="status">Chọn file CSV hoặc chọn cả thư mục pre_move_data</span>
     </div>
-    <div class="hint">Các file được ghép theo tên/path. Điểm đỏ là is_peak. Kéo thanh trượt để di chuyển theo thời gian.</div>
+    <div class="hint">Đường đỏ dọc là vị trí R đã remap về raw. Vùng vàng chỉ biểu diễn thời gian Two-MA đang active trên các chart năng lượng/MA; nó có trễ causal và không phải độ rộng QRS thật. Đường cam là threshold.</div>
   </header>
   <main id="charts"><div class="empty">Chưa có dữ liệu ECG</div></main>
 
@@ -64,6 +64,12 @@
       });
     }
 
+    function finiteNumber(value) {
+      if (value === undefined || value === null || value === "") return NaN;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : NaN;
+    }
+
     async function loadFiles(files) {
       const rows = [];
       const csvFiles = [...files]
@@ -78,19 +84,46 @@
       }
       if (!rows.length || !("timestamp_ms" in rows[0])) throw new Error("CSV thiếu cột timestamp_ms hoặc không có mẫu");
 
-      const first = Number(rows[0].timestamp_ms);
-      const excluded = new Set(["timestamp_ms", "is_peak"]);
-      const columns = Object.keys(rows[0]).filter(k => !excluded.has(k));
+      const first = finiteNumber(rows[0].timestamp_ms);
+      if (!Number.isFinite(first)) throw new Error("timestamp_ms đầu tiên không hợp lệ");
+      const peakColumn = "is_r_peak" in rows[0] ? "is_r_peak" : ("is_peak" in rows[0] ? "is_peak" : null);
+      const blockColumn = "two_ma_block" in rows[0] ? "two_ma_block" : ("qrs_block" in rows[0] ? "qrs_block" : null);
+      const excluded = new Set(["timestamp_ms", "is_peak", "is_r_peak", "qrs_block", "two_ma_block"]);
+      const columns = Object.keys(rows[0]).filter(k =>
+        !excluded.has(k) && rows.some(r => Number.isFinite(finiteNumber(r[k])))
+      );
+      const timestamps = rows.map(r => finiteNumber(r.timestamp_ms));
+      const peaks = rows.map(r => {
+          const value = peakColumn ? finiteNumber(r[peakColumn]) : NaN;
+          return Number.isFinite(value) && value !== 0;
+        });
+      if (peakColumn === "is_peak" && "r_peak_timestamp_ms" in rows[0]) {
+        const timestampIndex = new Map(timestamps.map((value, index) => [value, index]));
+        const alignedPeaks = rows.map(() => false);
+        rows.forEach((row, emitIndex) => {
+          if (!peaks[emitIndex]) return;
+          const rTime = finiteNumber(row.r_peak_timestamp_ms);
+          const rIndex = timestampIndex.get(rTime);
+          alignedPeaks[Number.isInteger(rIndex) ? rIndex : emitIndex] = true;
+        });
+        peaks.splice(0, peaks.length, ...alignedPeaks);
+      }
       dataset = {
-        t: rows.map(r => (Number(r.timestamp_ms) - first) / 1000),
-        peaks: rows.map(r => Number(r.is_peak || 0) !== 0),
+        t: timestamps.map(value => (value - first) / 1000),
+        peaks,
+        blocks: rows.map(r => {
+          const value = blockColumn ? finiteNumber(r[blockColumn]) : NaN;
+          return Number.isFinite(value) && value !== 0;
+        }),
+        peakColumn,
         columns,
-        values: Object.fromEntries(columns.map(c => [c, rows.map(r => Number(r[c]))]))
+        values: Object.fromEntries(columns.map(c => [c, rows.map(r => finiteNumber(r[c]))]))
       };
       const duration = dataset.t.at(-1) || 0;
       startSlider.max = duration;
       startSlider.value = 0;
-      status.textContent = `${csvFiles.length} file · ${rows.length.toLocaleString()} mẫu · ${duration.toFixed(2)} s`;
+      const peakCount = dataset.peaks.filter(Boolean).length;
+      status.textContent = `${csvFiles.length} file · ${rows.length.toLocaleString()} mẫu · ${duration.toFixed(2)} s · ${peakCount} R-peak`;
       buildCharts();
       draw();
     }
@@ -100,7 +133,10 @@
       dataset.columns.forEach(column => {
         const box = document.createElement("section");
         box.className = "chart";
-        box.innerHTML = `<div class="chart-title">${column}</div><canvas></canvas>`;
+        const suffix = column === "ma_qrs_100ms" && dataset.values.threshold
+          ? " <span style=\"color:#ffad42\">+ threshold</span>"
+          : "";
+        box.innerHTML = `<div class="chart-title">${column}${suffix}</div><canvas></canvas>`;
         box.dataset.column = column;
         charts.appendChild(box);
       });
@@ -119,11 +155,27 @@
       const indices = [];
       for (let i = 0; i < dataset.t.length; i++) if (dataset.t[i] >= from && dataset.t[i] <= to) indices.push(i);
       if (!indices.length) return;
-      const ys = indices.map(i => dataset.values[column][i]).filter(Number.isFinite);
+      const overlay = column === "ma_qrs_100ms" && dataset.values.threshold
+        ? dataset.values.threshold : null;
+      const ys = indices.flatMap(i => overlay
+        ? [dataset.values[column][i], overlay[i]]
+        : [dataset.values[column][i]]).filter(Number.isFinite);
+      if (!ys.length) return;
       let ymin = Math.min(...ys), ymax = Math.max(...ys);
       if (ymin === ymax) { ymin--; ymax++; }
       const x = t => pad.l + (t - from) / Math.max(to - from, 0.001) * w;
       const y = v => pad.t + (ymax - v) / (ymax - ymin) * h;
+
+      const blockCharts = new Set([
+        "energy", "energy_positive", "ma_qrs_100ms", "ma_beat_600ms", "threshold"
+      ]);
+      if (blockCharts.has(column) && dataset.blocks.some(Boolean)) {
+        ctx.fillStyle = "#ffc85718";
+        for (const i of indices) if (dataset.blocks[i]) {
+          const next = i + 1 < dataset.t.length ? dataset.t[i + 1] : dataset.t[i];
+          ctx.fillRect(x(dataset.t[i]), pad.t, Math.max(1, x(next) - x(dataset.t[i])), h);
+        }
+      }
 
       ctx.strokeStyle = "#243b49"; ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
@@ -146,7 +198,31 @@
       }
       ctx.stroke();
 
-      if (["raw_adc", "raw_centered", "corrected", "filtered"].includes(column)) {
+      if (overlay) {
+        ctx.strokeStyle = "#ffad42"; ctx.lineWidth = 1.2; ctx.beginPath();
+        let overlayStarted = false;
+        for (const i of indices) {
+          const value = overlay[i];
+          if (!Number.isFinite(value)) { overlayStarted = false; continue; }
+          if (!overlayStarted) { ctx.moveTo(x(dataset.t[i]), y(value)); overlayStarted = true; }
+          else ctx.lineTo(x(dataset.t[i]), y(value));
+        }
+        ctx.stroke();
+      }
+
+      // A common R-time reference makes causal filter/MA latency visible
+      // without incorrectly painting the delayed Two-MA block over raw ECG.
+      ctx.strokeStyle = "#ff526388";
+      ctx.lineWidth = 1;
+      for (const i of indices) if (dataset.peaks[i]) {
+        const px = x(dataset.t[i]);
+        ctx.beginPath();
+        ctx.moveTo(px, pad.t);
+        ctx.lineTo(px, pad.t + h);
+        ctx.stroke();
+      }
+
+      if (["raw_adc", "raw_centered", "centered", "corrected", "filtered", "bandpass_5_18hz", "bandpass_positive"].includes(column)) {
         ctx.fillStyle = "#ff5263";
         for (const i of indices) if (dataset.peaks[i] && Number.isFinite(dataset.values[column][i])) {
           ctx.beginPath(); ctx.arc(x(dataset.t[i]), y(dataset.values[column][i]), 3.5, 0, Math.PI * 2); ctx.fill();

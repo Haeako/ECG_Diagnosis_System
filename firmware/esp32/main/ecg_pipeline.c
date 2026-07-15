@@ -24,7 +24,7 @@
 #define ECG_SD_FILE_MAX_LEN     64
 #define ECG_SD_SEGMENT_MS       10000
 #define SD_BATCH_SAMPLES        16
-#define SD_BATCH_BYTES          1024
+#define SD_BATCH_BYTES          2048
 #define SD_TASK_STACK_SIZE      6144
 #define SD_RINGBUFFER_DROP_LIMIT 32
 
@@ -128,8 +128,8 @@ static esp_err_t ecg_start_sd_segment(uint32_t now_ms)
     ESP_LOGI(TAG_ECG, "SD segment started: %s", ecg_sd_file);
     return sd_spi_write(
         ecg_sd_file,
-        "timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,bpm\n",
-        strlen("timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,bpm\n"));
+        "timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,r_peak_timestamp_ms,rr_interval_ms,instant_bpm,bpm\n",
+        strlen("timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,r_peak_timestamp_ms,rr_interval_ms,instant_bpm,bpm\n"));
 }
 
 esp_err_t ecg_pipeline_enter_recording(void)
@@ -254,13 +254,16 @@ static void sd_write_task(void *pvParameters)
             if (record_active && item_size == sizeof(*sample)) {
                 int line_len = snprintf(sd_batch + batch_len,
                                         sizeof(sd_batch) - batch_len,
-                                        "%lu,%u,%d,%d,%d,%u,%u\n",
+                                        "%lu,%u,%d,%d,%d,%u,%lu,%u,%u,%u\n",
                                         (unsigned long)sample->timestamp_ms,
                                         sample->raw_adc,
                                         sample->baseline,
                                         sample->corrected,
                                         sample->filtered,
                                         sample->is_peak,
+                                        (unsigned long)sample->r_peak_timestamp_ms,
+                                        sample->rr_interval_ms,
+                                        sample->instant_bpm,
                                         sample->bpm);
                 if (line_len > 0
                     && line_len < (int)(sizeof(sd_batch) - batch_len)) {
