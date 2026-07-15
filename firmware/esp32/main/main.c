@@ -21,6 +21,7 @@
 #define APP_MIN_FREE_HEAP      (20 * 1024)
 #define APP_MIN_STATE_STACK    512
 #define SD_CARD_PRESENT_LEVEL 1
+#define INIT_RESTART_FAIL_LIMIT 20
 typedef enum {
     ECG_STATE_INIT,
     ECG_STATE_IDLE,
@@ -34,8 +35,11 @@ static volatile bool sd_detect_event_pending = false;
 static volatile uint32_t pipeline_event_pending = 0;
 static volatile ecg_pipeline_event_t last_pipeline_event = ECG_PIPELINE_EVENT_SD_FAULT;
 static volatile esp_err_t last_pipeline_error = ESP_OK;
+static volatile bool pipeline_recovery_pending = false;
+static volatile ecg_pipeline_event_t pending_recovery_event = ECG_PIPELINE_EVENT_SD_FAULT;
 static TickType_t last_init_health_check = 0;
 static TickType_t last_idle_health_check = 0;
+static uint32_t init_health_fail_count = 0;
 
 #define PIPELINE_EVENT_BIT(event) (1UL << (uint32_t)(event))
 
@@ -195,11 +199,29 @@ static const char *pipeline_event_name(ecg_pipeline_event_t event)
     }
 }
 
+static ecg_pipeline_event_t pipeline_recovery_event_from_bits(uint32_t events)
+{
+    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_SD_FAULT)) {
+        return ECG_PIPELINE_EVENT_SD_FAULT;
+    }
+    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_ADC_FAULT)) {
+        return ECG_PIPELINE_EVENT_ADC_FAULT;
+    }
+    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_BUFFER_FAULT)) {
+        return ECG_PIPELINE_EVENT_BUFFER_FAULT;
+    }
+    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_TASK_FAULT)) {
+        return ECG_PIPELINE_EVENT_TASK_FAULT;
+    }
+    return ECG_PIPELINE_EVENT_BLE_FAULT;
+}
+
 static void enter_idle_state(void)
 {
     ecg_pipeline_enter_idle();
     ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
     ecg_state = ECG_STATE_IDLE;
+    init_health_fail_count = 0;
     ESP_LOGI(TAG_APP, "State: IDLE");
 }
 
@@ -252,6 +274,8 @@ static void ecg_state_task(void *pvParameters)
                           | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_ADC_FAULT)
                           | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_BUFFER_FAULT)
                           | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_TASK_FAULT))) {
+                pending_recovery_event = pipeline_recovery_event_from_bits(events);
+                pipeline_recovery_pending = true;
                 enter_init_state();
             }
         }
@@ -260,10 +284,35 @@ static void ecg_state_task(void *pvParameters)
             && (last_init_health_check == 0
                 || (now - last_init_health_check) >= pdMS_TO_TICKS(INIT_HEALTH_RETRY_MS))) {
             last_init_health_check = now;
-            if (app_health_check("init")) {
+
+            if (pipeline_recovery_pending) {
+                esp_err_t recovery_ret = ecg_pipeline_recover_from_event(
+                    pending_recovery_event);
+                if (recovery_ret == ESP_OK) {
+                    pipeline_recovery_pending = false;
+                    ESP_LOGI(TAG_APP,
+                             "Recovery from %s completed",
+                             pipeline_event_name(pending_recovery_event));
+                } else {
+                    ESP_LOGW(TAG_APP,
+                             "Recovery from %s failed (%s), staying in INIT",
+                             pipeline_event_name(pending_recovery_event),
+                             esp_err_to_name(recovery_ret));
+                }
+            }
+
+            if (!pipeline_recovery_pending && app_health_check("init")) {
                 enter_idle_state();
             } else {
+                init_health_fail_count++;
                 ESP_LOGW(TAG_APP, "INIT health check failed, staying in INIT");
+                if (init_health_fail_count >= INIT_RESTART_FAIL_LIMIT
+                    && gpio_get_level(SD_DETECT_GPIO) == SD_CARD_PRESENT_LEVEL) {
+                    ESP_LOGE(TAG_APP,
+                             "INIT failed %lu times with SD present; restarting system",
+                             (unsigned long)init_health_fail_count);
+                    esp_restart();
+                }
             }
         }
 

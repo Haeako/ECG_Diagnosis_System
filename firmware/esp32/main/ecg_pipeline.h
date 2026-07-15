@@ -18,6 +18,7 @@ typedef void (*ecg_pipeline_event_cb_t)(ecg_pipeline_event_t event,
 void ecg_pipeline_set_event_callback(ecg_pipeline_event_cb_t callback);
 esp_err_t ecg_pipeline_init(void);
 void ecg_pipeline_start(void);
+esp_err_t ecg_pipeline_recover_from_event(ecg_pipeline_event_t event);
 esp_err_t ecg_pipeline_enter_recording(void);
 void ecg_pipeline_enter_idle(void);
 void ecg_pipeline_enter_init(void);

@@ -1,0 +1,472 @@
+\chapter{Phát triển hệ thống}
+
+\section{Phần cứng}
+
+Hệ thống được xây dựng dựa trên vi điều khiển ESP32, module đo ECG AD8232,
+module thẻ nhớ SD và các ngoại vi hỗ trợ quá trình ghi nhận dữ liệu. Module
+AD8232 đảm nhiệm vai trò khuếch đại và tiền xử lý tín hiệu điện tim thu được từ
+các điện cực. Ba điện cực chính gồm RA, LA và RL được gắn lên cơ thể người đo;
+trong đó RA và LA là hai đầu vào vi sai của tín hiệu ECG, còn RL đóng vai trò
+điện cực tham chiếu.
+
+Tín hiệu ECG sau tiền xử lý được lấy ra tại chân \texttt{OUT} của AD8232 và đưa
+vào chân ADC của ESP32. Ngoài ra, hai chân \texttt{LO+} và \texttt{LO-} của
+AD8232 có thể được dùng để nhận biết tình trạng rời điện cực. Tuy nhiên, trong
+thực tế hai chân này có thể xuất hiện xung hoặc trạng thái không ổn định khi
+toàn bộ điện cực chưa được gắn, do các đầu vào của mạch bị floating. Vì vậy,
+trạng thái điện cực không nên được quyết định bằng một lần đọc GPIO duy nhất mà
+cần kết hợp lọc theo cửa sổ thời gian hoặc kiểm tra thêm biên độ tín hiệu ADC.
+
+Chân \texttt{SDN} của AD8232 là chân shutdown. Khi \texttt{SDN} ở mức cao,
+module hoạt động bình thường; khi \texttt{SDN} ở mức thấp, module chuyển sang
+trạng thái tiết kiệm năng lượng. Trong hệ thống hiện tại, chân này có thể được
+kéo lên mức cao hoặc điều khiển bởi một GPIO của ESP32 nếu cần bật/tắt module
+bằng phần mềm.
+
+Module thẻ nhớ SD được kết nối với ESP32 thông qua giao tiếp SPI để lưu dữ liệu
+ECG dưới dạng file CSV. Ngoài các chân SPI, hệ thống sử dụng thêm chân
+\texttt{GPIO35} để nhận tín hiệu DET của module thẻ SD. Khi trạng thái thẻ SD
+thay đổi, chân này tạo ngắt để firmware đưa hệ thống về trạng thái khởi tạo lại.
+Một LED trạng thái được nối tại \texttt{GPIO21}; LED được bật khi hệ thống đang
+ở trạng thái ghi dữ liệu và tắt ở các trạng thái còn lại.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{figures/Heart_Rate_Monitor_wiring.png}
+    \caption{Sơ đồ đi dây của các module trong hệ thống}
+    \label{fig:hardware_wiring}
+\end{figure}
+
+\section{Thiết kế hệ thống}
+
+Phần mềm được thiết kế theo hướng tách biệt giữa khối quản lý trạng thái và
+khối dịch vụ xử lý ECG. File \texttt{main.c} quản lý state machine chính của hệ
+thống, bao gồm các trạng thái \texttt{INIT}, \texttt{IDLE} và \texttt{RECORD}.
+Trong khi đó, file \texttt{ecg\_pipeline.c} chứa các hàm dịch vụ mà state
+machine gọi khi cần, ví dụ khởi tạo pipeline, bắt đầu ghi dữ liệu, dừng ghi dữ
+liệu, reset pipeline, đọc ADC, xử lý ECG và ghi dữ liệu vào thẻ SD.
+
+Cách tổ chức này giúp state machine không bị trộn lẫn với các hàm xử lý thấp
+tầng. Các task dịch vụ không tự ý chuyển trạng thái hệ thống mà chỉ phát sinh sự
+kiện lỗi về state machine. State machine là nơi duy nhất quyết định hệ thống sẽ
+ở trạng thái nào tiếp theo.
+
+\subsection{Thiết kế state machine}
+
+State machine hiện tại gồm ba trạng thái chính:
+
+\begin{itemize}
+    \item \textbf{INIT}: trạng thái khởi tạo và phục hồi hệ thống.
+    \item \textbf{IDLE}: trạng thái sẵn sàng, chờ người dùng bắt đầu ghi dữ liệu.
+    \item \textbf{RECORD}: trạng thái đang lấy mẫu, xử lý và lưu dữ liệu ECG.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/State_machine.png}
+    \caption{Sơ đồ chuyển trạng thái của hệ thống}
+    \label{fig:state_machine}
+\end{figure}
+
+Trong trạng thái \texttt{INIT}, hệ thống thực hiện các thao tác phục hồi an
+toàn. Firmware dừng quá trình ghi dữ liệu nếu đang hoạt động, dừng timer lấy
+mẫu, hủy khởi tạo ADC nếu cần, đóng hoặc unmount thẻ SD nếu cần và tắt LED báo
+ghi dữ liệu tại \texttt{GPIO21}. Sau đó hệ thống thực hiện kiểm tra sức khỏe
+cơ bản. Nếu các điều kiện khởi tạo đạt yêu cầu, hệ thống chuyển sang trạng thái
+\texttt{IDLE}; nếu không, hệ thống tiếp tục ở lại \texttt{INIT} và thử kiểm tra
+lại sau một khoảng thời gian.
+
+Trong trạng thái \texttt{IDLE}, hệ thống đã sẵn sàng nhưng chưa ghi dữ liệu.
+Timer ADC chưa được chạy, ADC chưa lấy mẫu và LED \texttt{GPIO21} ở mức thấp.
+Ở trạng thái này, firmware thực hiện health check định kỳ để kiểm tra các điều
+kiện cơ bản như heap, stack, trạng thái thẻ SD và các lỗi hệ thống. Khi người
+dùng nhấn nút record tại \texttt{GPIO0}, state machine gọi hàm
+\texttt{ecg\_pipeline\_enter\_recording()}. Nếu mount thẻ SD và khởi động các
+dịch vụ ghi thành công, hệ thống chuyển sang \texttt{RECORD}. Nếu có lỗi, hệ
+thống quay về \texttt{INIT}.
+
+Trong trạng thái \texttt{RECORD}, hệ thống mount thẻ SD, khởi tạo ADC, reset
+bộ xử lý tín hiệu, bật timer lấy mẫu và bắt đầu ghi dữ liệu. Mỗi khi timer tạo
+sự kiện lấy mẫu, task xử lý ECG đọc ADC, xử lý tín hiệu, phát hiện đỉnh R, tính
+BPM và gửi mẫu dữ liệu sang task ghi SD. Dữ liệu được ghi xuống thẻ SD theo
+dạng CSV. Nếu có BLE subscriber, hệ thống cũng có thể gửi dữ liệu ECG gần thời
+gian thực qua BLE. Khi hệ thống ở trạng thái này, LED tại \texttt{GPIO21} được
+kéo lên mức cao để báo đang ghi dữ liệu.
+
+\begin{table}[H]
+    \centering
+    \caption{Các trạng thái chính của hệ thống}
+    \label{tab:system_states}
+    \begin{tabular}{|p{3cm}|p{10cm}|}
+        \hline
+        \textbf{Trạng thái} & \textbf{Chức năng} \\
+        \hline
+        \texttt{INIT} &
+        Dừng ghi, dừng timer, hủy khởi tạo ADC nếu cần, reset/close SD nếu cần,
+        tắt LED recording và kiểm tra điều kiện phục hồi hệ thống. \\
+        \hline
+        \texttt{IDLE} &
+        Hệ thống sẵn sàng, chưa ghi dữ liệu, LED recording tắt, thực hiện health
+        check định kỳ và chờ nút record. \\
+        \hline
+        \texttt{RECORD} &
+        Mount SD, lấy mẫu ADC theo timer, xử lý ECG, ghi CSV, gửi BLE nếu có
+        subscriber và bật LED \texttt{GPIO21}. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \caption{Sự kiện chuyển trạng thái của hệ thống}
+    \label{tab:state_transitions}
+    \begin{tabular}{|p{4cm}|p{3cm}|p{3cm}|p{4cm}|}
+        \hline
+        \textbf{Sự kiện} & \textbf{Trạng thái nguồn} & \textbf{Trạng thái đích} & \textbf{Ghi chú} \\
+        \hline
+        Khởi tạo OK / system ready & \texttt{INIT} & \texttt{IDLE} &
+        Health check đạt yêu cầu. \\
+        \hline
+        Init fail & \texttt{INIT} & \texttt{INIT} &
+        Tiếp tục ở lại INIT và thử lại sau. \\
+        \hline
+        Nhấn nút record + mount SD OK & \texttt{IDLE} & \texttt{RECORD} &
+        Nút \texttt{GPIO0} active-low, có debounce phần mềm. \\
+        \hline
+        Nhấn nút stop & \texttt{RECORD} & \texttt{IDLE} &
+        Dừng ghi, dừng timer và tắt LED recording. \\
+        \hline
+        GPIO35 SD DET interrupt & Mọi trạng thái & \texttt{INIT} &
+        Xảy ra khi thẻ SD bị rút/cắm hoặc tín hiệu DET thay đổi. \\
+        \hline
+        Lỗi mount/ghi SD & \texttt{RECORD} & \texttt{INIT} &
+        Pipeline phát sinh sự kiện lỗi SD về state machine. \\
+        \hline
+        Lỗi ADC / buffer / task & \texttt{RECORD} hoặc \texttt{IDLE} & \texttt{INIT} &
+        Lỗi phần mềm được raise thành event để state machine xử lý. \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Thiết kế ngắt phần cứng}
+
+Hệ thống sử dụng ngắt phần cứng cho chân DET của thẻ SD. Chân này được kết nối
+với \texttt{GPIO35} của ESP32 và được cấu hình ngắt cả hai cạnh
+(\textit{any edge}). Khi người dùng rút hoặc cắm thẻ SD, tín hiệu DET thay đổi,
+ISR của \texttt{GPIO35} được gọi.
+
+Trong ISR, firmware không thực hiện các thao tác nặng như mount/unmount SD,
+dừng ADC hoặc ghi log dài. ISR chỉ đặt cờ sự kiện và đánh thức task quản lý
+trạng thái bằng cơ chế notify của FreeRTOS. Sau đó, state task chạy ở ngữ cảnh
+task bình thường sẽ xử lý sự kiện này bằng cách chuyển hệ thống về trạng thái
+\texttt{INIT}. Thiết kế này giúp ISR ngắn, an toàn và tránh thực hiện các hàm
+không phù hợp trong ngữ cảnh ngắt.
+
+Luồng xử lý ngắt phần cứng có thể mô tả như sau:
+
+\begin{verbatim}
+GPIO35 SD DET edge
+-> ISR sets sd_detect_event_pending = true
+-> ISR notifies state task
+-> state task handles event
+-> enter INIT
+-> stop recording services
+-> close/unmount SD if needed
+-> LED GPIO21 LOW
+\end{verbatim}
+
+\subsection{Thiết kế ngắt phần mềm và sự kiện lỗi}
+
+Bên cạnh ngắt phần cứng, hệ thống sử dụng cơ chế sự kiện phần mềm để báo lỗi từ
+pipeline về state machine. Các task xử lý ECG và ghi SD không tự đổi trạng thái
+hệ thống. Khi xảy ra lỗi, chúng gọi hàm raise event trong pipeline. Callback đã
+đăng ký trong \texttt{main.c} sẽ nhận event, đặt cờ pending và notify state
+task. State task sau đó quyết định chuyển trạng thái.
+
+Các loại sự kiện lỗi chính gồm:
+
+\begin{itemize}
+    \item \texttt{ECG\_PIPELINE\_EVENT\_SD\_FAULT}: lỗi mount SD, ghi header,
+    ghi segment hoặc ghi dữ liệu.
+    \item \texttt{ECG\_PIPELINE\_EVENT\_ADC\_FAULT}: lỗi đọc ADC.
+    \item \texttt{ECG\_PIPELINE\_EVENT\_BUFFER\_FAULT}: ring buffer đầy và rơi
+    mẫu quá nhiều.
+    \item \texttt{ECG\_PIPELINE\_EVENT\_TASK\_FAULT}: lỗi tạo task hệ thống.
+    \item \texttt{ECG\_PIPELINE\_EVENT\_BLE\_FAULT}: lỗi khởi tạo BLE. Lỗi này
+    hiện chỉ được log, không bắt buộc kéo hệ thống về \texttt{INIT} vì SD
+    pipeline vẫn có thể hoạt động.
+\end{itemize}
+
+Luồng xử lý sự kiện phần mềm:
+
+\begin{verbatim}
+pipeline/service fault
+-> ecg_pipeline_raise_event(...)
+-> callback in main.c
+-> set pipeline_event_pending bit
+-> notify state task
+-> state task checks event type
+-> severe fault: enter INIT
+\end{verbatim}
+
+Cách thiết kế này giúp state machine giữ vai trò trung tâm. Các module dịch vụ
+chỉ báo lỗi, còn quyết định phục hồi hoặc chuyển trạng thái được thực hiện ở
+một nơi duy nhất.
+
+\subsection{Thiết kế timer lấy mẫu}
+
+Việc lấy mẫu tín hiệu ECG được điều khiển bằng GPTimer của ESP32. Timer được
+cấu hình để tạo sự kiện định kỳ tương ứng với tần số lấy mẫu mục tiêu khoảng
+360 Hz. Khi timer đến chu kỳ lấy mẫu, callback timer không đọc ADC trực tiếp mà
+chỉ phát semaphore cho task xử lý ECG.
+
+Task xử lý ECG chờ semaphore từ timer. Khi nhận được semaphore, task kiểm tra
+hệ thống có đang ở trạng thái ghi dữ liệu hay không. Nếu \texttt{record\_active}
+đang bật, task đọc ADC, gọi hàm xử lý tín hiệu ECG và gửi mẫu đã xử lý sang
+ring buffer để task ghi SD lưu xuống thẻ nhớ.
+
+Luồng timer lấy mẫu:
+
+\begin{verbatim}
+GPTimer alarm at 360 Hz
+-> timer callback gives adc_timer_semaphore
+-> ECG processing task wakes up
+-> read ADC
+-> process ECG sample
+-> send sample to SD ring buffer
+\end{verbatim}
+
+Thiết kế này tách biệt phần ngắt timer và phần xử lý nặng. Timer callback chỉ
+làm nhiệm vụ đánh thức task, còn việc đọc ADC, lọc tín hiệu và ghi dữ liệu được
+thực hiện trong task bình thường.
+
+\section{Xử lý tín hiệu số}
+
+Tín hiệu ECG sau khi được module AD8232 khuếch đại sẽ được ESP32 lấy mẫu thông
+qua ADC. Dữ liệu ADC thô được xử lý qua nhiều bước để giảm nhiễu, loại bỏ trôi
+nền và phát hiện đỉnh R. Luồng xử lý hiện tại gồm dịch mức ADC, ước lượng
+baseline, loại bỏ baseline, lọc số và phát hiện R-peak.
+
+Đầu tiên, giá trị ADC thô được dịch quanh mức giữa ADC để tạo tín hiệu
+\texttt{raw\_centered}. Sau đó, firmware sử dụng bộ lọc trung bình trượt để
+ước lượng baseline. Tín hiệu sau khi trừ baseline được gọi là
+\texttt{corrected}. Tín hiệu này tiếp tục đi qua các bộ lọc high-pass,
+stop-band/notch, low-pass và Kalman để tạo ra tín hiệu \texttt{filtered}.
+
+Luồng xử lý tín hiệu hiện tại:
+
+\begin{verbatim}
+raw_adc
+-> raw_centered = raw_adc - 2048
+-> baseline = moving_average(raw_centered)
+-> corrected = raw_centered - baseline
+-> high-pass filter
+-> stop-band / notch filter
+-> low-pass filter
+-> Kalman filter
+-> filtered
+-> R-peak detection
+-> RR interval / BPM
+\end{verbatim}
+
+Các dữ liệu chính được lưu xuống thẻ SD dưới dạng CSV. Header CSV hiện tại gồm:
+
+\begin{verbatim}
+timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,bpm
+\end{verbatim}
+
+Trong đó, \texttt{timestamp\_ms} là thời điểm lấy mẫu, \texttt{raw\_adc} là
+giá trị ADC thô, \texttt{baseline} là giá trị nền ước lượng,
+\texttt{corrected} là tín hiệu sau khi loại bỏ baseline, \texttt{filtered} là
+tín hiệu sau các bộ lọc, \texttt{is\_peak} đánh dấu mẫu được phát hiện là đỉnh
+R và \texttt{bpm} là nhịp tim ước lượng.
+
+Trong các giai đoạn tiếp theo, hệ thống có thể bổ sung thêm các cột như
+\texttt{raw\_centered}, \texttt{qrs\_energy}, \texttt{qrs\_threshold} và
+\texttt{quality\_bad} để hỗ trợ debug thuật toán phát hiện R-peak và nhận biết
+motion artifact hoặc rời điện cực.
+
+\subsection{Datapath xử lý dữ liệu ECG}
+
+Datapath của hệ thống mô tả đường đi của dữ liệu từ cảm biến ECG đến các khối
+xử lý, lưu trữ và truyền thông. Trong thiết kế hiện tại, dữ liệu bắt đầu từ tín
+hiệu analog tại chân \texttt{OUT} của module AD8232, sau đó được ESP32 lấy mẫu
+bằng ADC. Mỗi mẫu ADC được đưa vào khối xử lý tín hiệu số để loại bỏ trôi nền,
+lọc nhiễu và phát hiện R-peak. Kết quả cuối cùng được lưu vào thẻ SD dưới dạng
+CSV và có thể gửi qua BLE nếu có thiết bị nhận dữ liệu.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/ECG_datapath.png}
+    \caption{Datapath xử lý dữ liệu ECG trong hệ thống}
+    \label{fig:ecg_datapath}
+\end{figure}
+
+Nếu chưa có hình datapath riêng, datapath có thể mô tả bằng lưu đồ text như sau:
+
+\begin{verbatim}
+AD8232 electrodes
+-> AD8232 analog front-end
+-> OUT analog ECG
+-> ESP32 ADC
+-> raw_adc
+-> baseline removal
+-> digital filters
+-> filtered ECG
+-> R-peak detector
+-> RR interval / BPM
+-> SD CSV storage
+-> BLE notification
+\end{verbatim}
+
+Trong datapath này, khối phát hiện R-peak được đặt sau các bộ lọc số. Lý do là
+tín hiệu ECG thô từ ADC còn chứa trôi nền, nhiễu cơ, nhiễu tiếp xúc điện cực và
+nhiễu cao tần. Nếu phát hiện R-peak trực tiếp trên tín hiệu thô, thuật toán dễ
+nhận nhầm motion artifact hoặc spike nhiễu thành đỉnh R. Vì vậy, tín hiệu được
+lọc và hiệu chỉnh trước, sau đó mới đưa vào thuật toán phát hiện QRS/R-peak.
+
+\subsection{Lưu đồ thuật toán xử lý ECG}
+
+Thuật toán xử lý ECG trong firmware được thiết kế theo hướng xử lý từng mẫu
+theo thời gian thực. Timer tạo nhịp lấy mẫu định kỳ, task xử lý ECG đọc ADC và
+đưa mẫu vào chuỗi xử lý số. Sau khi tính được tín hiệu \texttt{filtered}, hệ
+thống gọi bộ phát hiện R-peak để xác định nhịp tim.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/ECG_algorithm_flow.png}
+    \caption{Lưu đồ thuật toán xử lý tín hiệu ECG}
+    \label{fig:ecg_algorithm_flow}
+\end{figure}
+
+Lưu đồ thuật toán có thể mô tả như sau:
+
+\begin{verbatim}
+Start RECORD
+-> Start ADC timer
+-> Wait timer semaphore
+-> Read ADC sample
+-> Convert raw_adc to raw_centered
+-> Estimate baseline by moving average
+-> corrected = raw_centered - baseline
+-> Apply HP / notch / LP / Kalman filters
+-> Run R-peak detector
+-> If R-peak:
+       update RR interval
+       update BPM
+       update AFib/RR irregularity features
+-> Push sample to SD ring buffer
+-> SD task writes CSV batch
+-> Repeat until STOP or fault event
+\end{verbatim}
+
+Trong trường hợp phát hiện lỗi như lỗi ADC, lỗi ghi SD hoặc ring buffer đầy quá
+nhiều lần, pipeline sẽ phát sinh sự kiện lỗi phần mềm. State machine nhận sự
+kiện này và chuyển hệ thống về trạng thái \texttt{INIT} để phục hồi.
+
+\subsection{Vị trí của thuật toán Pan-Tompkins trong pipeline}
+
+Thuật toán Pan-Tompkins hoặc các biến thể như Pan-Tompkins++ không nằm ở tầng
+đọc ADC, ghi SD hay quản lý trạng thái. Thuật toán này thuộc khối xử lý tín hiệu
+số, cụ thể là khối phát hiện QRS/R-peak. Vì vậy, trong kiến trúc firmware, nó
+nên được đặt bên trong module xử lý tín hiệu, ví dụ trong file
+\texttt{ecg\_signal.c} hoặc tách riêng thành module mới như
+\texttt{ecg\_rpeak\_detector.c}.
+
+Vị trí hợp lý của Pan-Tompkins trong datapath:
+
+\begin{verbatim}
+raw_adc
+-> baseline removal
+-> digital filters
+-> filtered ECG
+-> Pan-Tompkins / Pan-Tompkins light / Two-MA detector
+-> R-peak index
+-> RR interval
+-> BPM
+\end{verbatim}
+
+Không nên đặt Pan-Tompkins trong \texttt{main.c}, vì \texttt{main.c} chỉ nên
+quản lý state machine và sự kiện hệ thống. Cũng không nên đặt thuật toán trực
+tiếp trong driver ADC hoặc driver timer, vì các driver này chỉ chịu trách nhiệm
+lấy mẫu và phát nhịp thời gian.
+
+Trong bản thử nghiệm offline, nhóm đã kiểm tra các hướng phát hiện R-peak gồm
+Pan-Tompkins++, Pan-Tompkins light viết bằng C và Two Moving Average QRS
+detector. Kết quả cho thấy các thuật toán này có thể phát hiện R-peak tốt ở các
+đoạn tín hiệu sạch, nhưng khi xuất hiện motion artifact hoặc nhiễu tiếp xúc điện
+cực, cần kết hợp thêm các luật kiểm tra chất lượng tín hiệu như refractory time,
+kiểm tra biên độ, kiểm tra độ rộng QRS và cờ \texttt{quality\_bad}.
+
+\subsection{Tổng quan thuật toán Pan-Tompkins}
+
+Pan-Tompkins là thuật toán phát hiện QRS kinh điển, phù hợp với hệ thống nhúng
+vì có thể triển khai theo từng mẫu và không yêu cầu mô hình học máy. Ý tưởng
+chính của thuật toán là làm nổi bật vùng QRS bằng các bước lọc, đạo hàm, bình
+phương, tích phân cửa sổ và ngưỡng thích nghi.
+
+Các bước chính của Pan-Tompkins:
+
+\begin{enumerate}
+    \item \textbf{Band-pass filtering}: giảm nhiễu trôi nền và nhiễu cao tần,
+    giữ lại dải tần chứa năng lượng QRS.
+    \item \textbf{Derivative}: tính độ dốc của tín hiệu để làm nổi bật cạnh lên
+    và cạnh xuống của QRS.
+    \item \textbf{Squaring}: bình phương tín hiệu đạo hàm để biến mọi biên độ
+    thành dương và nhấn mạnh các thay đổi nhanh.
+    \item \textbf{Moving window integration}: tích phân/trung bình trượt trên
+    cửa sổ ngắn để ước lượng năng lượng QRS theo thời gian.
+    \item \textbf{Adaptive threshold}: dùng ngưỡng thích nghi để phân biệt vùng
+    QRS và nhiễu.
+    \item \textbf{Search-back và refractory}: tìm lại nhịp bị bỏ sót và ngăn
+    không cho phát hiện hai R-peak quá gần nhau.
+\end{enumerate}
+
+Trong hệ thống hiện tại, do tín hiệu đã đi qua các bộ lọc high-pass,
+stop-band/notch, low-pass và Kalman, phiên bản triển khai trên MCU có thể dùng
+dạng Pan-Tompkins light:
+
+\begin{verbatim}
+filtered ECG
+-> derivative
+-> square
+-> moving window integration
+-> adaptive threshold
+-> remap candidate to max(abs(filtered))
+-> refractory check
+-> R-peak
+\end{verbatim}
+
+Việc remap candidate về \texttt{max(abs(filtered))} trong một cửa sổ ngắn giúp
+đưa vị trí phát hiện từ vùng năng lượng QRS về đúng vị trí đỉnh R trên tín hiệu
+ECG. Refractory time được dùng để tránh trường hợp thuật toán phát hiện nhiều
+đỉnh trong cùng một phức bộ QRS. Với tần số lấy mẫu khoảng 360 Hz, khoảng cách
+tối thiểu giữa hai R-peak nên đặt khoảng 200--250 ms thay vì chỉ vài mili-giây.
+
+\subsection{Đề xuất module hóa bộ phát hiện R-peak}
+
+Để firmware dễ mở rộng, bộ phát hiện R-peak nên được tách thành module riêng.
+Cấu trúc đề xuất:
+
+\begin{verbatim}
+main/
+  ecg_signal.c
+  ecg_signal.h
+  components/
+    rpeak/
+      ecg_rpeak_detector.c
+      ecg_rpeak_detector.h
+\end{verbatim}
+
+Module \texttt{ecg\_rpeak\_detector} sẽ cung cấp các hàm:
+
+\begin{verbatim}
+void ecg_rpeak_init(uint32_t fs_hz);
+void ecg_rpeak_reset(uint32_t now_ms);
+ecg_rpeak_result_t ecg_rpeak_process(int16_t filtered, uint32_t now_ms);
+\end{verbatim}
+
+Khi đó, \texttt{ecg\_signal.c} chỉ cần gọi detector sau khi đã tạo ra tín hiệu
+\texttt{filtered}. Cách này giúp có thể thay đổi thuật toán từ detector hiện
+tại sang Pan-Tompkins light, Two Moving Average hoặc fusion detector mà không
+ảnh hưởng đến ADC, timer, SD, BLE và state machine.
