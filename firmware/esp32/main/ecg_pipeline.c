@@ -27,6 +27,8 @@
 #define SD_BATCH_BYTES          2048
 #define SD_TASK_STACK_SIZE      6144
 #define SD_RINGBUFFER_DROP_LIMIT 32
+#define RPEAK_ALIGN_DELAY_MS    1000U
+#define RPEAK_PENDING_SAMPLES   512U
 
 static const char *TAG_ECG = "ECG";
 
@@ -40,6 +42,7 @@ static uint32_t ecg_record_start_ms = 0;
 static uint32_t ecg_sd_segment_start_ms = 0;
 static uint32_t ecg_sd_segment_index = 0;
 static char sd_batch[SD_BATCH_BYTES];
+static ecg_record_t rpeak_pending[RPEAK_PENDING_SAMPLES];
 
 static volatile bool record_active = false;
 
@@ -128,8 +131,8 @@ static esp_err_t ecg_start_sd_segment(uint32_t now_ms)
     ESP_LOGI(TAG_ECG, "SD segment started: %s", ecg_sd_file);
     return sd_spi_write(
         ecg_sd_file,
-        "timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,r_peak_timestamp_ms,rr_interval_ms,instant_bpm,bpm\n",
-        strlen("timestamp_ms,raw_adc,baseline,corrected,filtered,is_peak,r_peak_timestamp_ms,rr_interval_ms,instant_bpm,bpm\n"));
+        "timestamp_ms,raw_adc,centered,notch_49_51hz,bandpass_5_18hz,ma_qrs_100ms,threshold,is_r_peak,bpm\n",
+        strlen("timestamp_ms,raw_adc,centered,notch_49_51hz,bandpass_5_18hz,ma_qrs_100ms,threshold,is_r_peak,bpm\n"));
 }
 
 esp_err_t ecg_pipeline_enter_recording(void)
@@ -298,46 +301,99 @@ static void ecg_processing_task(void *pvParameters)
 static void sd_write_task(void *pvParameters)
 {
     (void)pvParameters;
+    size_t pending_head = 0;
+    size_t pending_count = 0;
 
     while (1) {
         size_t batch_len = 0;
+        bool received_sample = false;
+        uint32_t newest_timestamp_ms = 0;
 
         for (int i = 0; i < SD_BATCH_SAMPLES; i++) {
             size_t item_size = 0;
-            TickType_t wait = i == 0 ? pdMS_TO_TICKS(500) : 0;
+            TickType_t wait = i == 0 && (record_active || pending_count == 0)
+                ? pdMS_TO_TICKS(500) : 0;
             ecg_record_t *sample = (ecg_record_t *)xRingbufferReceive(
                 sd_buf_handle, &item_size, wait);
             if (sample == NULL) {
                 break;
             }
 
-            if (record_active && item_size == sizeof(*sample)) {
-                int line_len = snprintf(sd_batch + batch_len,
-                                        sizeof(sd_batch) - batch_len,
-                                        "%lu,%u,%d,%d,%d,%u,%lu,%u,%u,%u\n",
-                                        (unsigned long)sample->timestamp_ms,
-                                        sample->raw_adc,
-                                        sample->baseline,
-                                        sample->corrected,
-                                        sample->filtered,
-                                        sample->is_peak,
-                                        (unsigned long)sample->r_peak_timestamp_ms,
-                                        sample->rr_interval_ms,
-                                        sample->instant_bpm,
-                                        sample->bpm);
-                if (line_len > 0
-                    && line_len < (int)(sizeof(sd_batch) - batch_len)) {
-                    batch_len += line_len;
-                } else {
-                    ESP_LOGW(TAG_ECG, "SD batch full, flushing early");
+            if (item_size == sizeof(*sample)) {
+                received_sample = true;
+                newest_timestamp_ms = sample->timestamp_ms;
+
+                if (sample->is_peak && sample->r_peak_timestamp_ms != 0U) {
+                    size_t best_offset = pending_count;
+                    uint32_t best_error = UINT32_MAX;
+                    for (size_t offset = 0; offset < pending_count; ++offset) {
+                        size_t slot = (pending_head + offset)
+                            % RPEAK_PENDING_SAMPLES;
+                        uint32_t timestamp = rpeak_pending[slot].timestamp_ms;
+                        uint32_t error = timestamp > sample->r_peak_timestamp_ms
+                            ? timestamp - sample->r_peak_timestamp_ms
+                            : sample->r_peak_timestamp_ms - timestamp;
+                        if (error < best_error) {
+                            best_error = error;
+                            best_offset = offset;
+                        }
+                    }
+                    if (best_offset < pending_count) {
+                        size_t slot = (pending_head + best_offset)
+                            % RPEAK_PENDING_SAMPLES;
+                        rpeak_pending[slot].is_peak = 1U;
+                    } else {
+                        ESP_LOGW(TAG_ECG,
+                                 "Aligned R timestamp is outside pending window");
+                    }
                 }
+
+                if (pending_count == RPEAK_PENDING_SAMPLES) {
+                    ESP_LOGW(TAG_ECG, "R-peak alignment window full");
+                    pending_head = (pending_head + 1U) % RPEAK_PENDING_SAMPLES;
+                    pending_count--;
+                }
+                size_t tail = (pending_head + pending_count)
+                    % RPEAK_PENDING_SAMPLES;
+                rpeak_pending[tail] = *sample;
+                rpeak_pending[tail].is_peak = 0U;
+                pending_count++;
             }
             vRingbufferReturnItem(sd_buf_handle, sample);
         }
 
+        for (int i = 0; i < SD_BATCH_SAMPLES && pending_count > 0; ++i) {
+            ecg_record_t *sample = &rpeak_pending[pending_head];
+            bool old_enough = received_sample
+                && (newest_timestamp_ms - sample->timestamp_ms)
+                    >= RPEAK_ALIGN_DELAY_MS;
+            if (received_sample && !old_enough) break;
+
+            int line_len = snprintf(sd_batch + batch_len,
+                                    sizeof(sd_batch) - batch_len,
+                                    "%lu,%u,%d,%d,%d,%.3f,%.3f,%u,%u\n",
+                                    (unsigned long)sample->timestamp_ms,
+                                    sample->raw_adc,
+                                    sample->raw_centered,
+                                    sample->notch_49_51hz,
+                                    sample->filtered,
+                                    (double)sample->ma_qrs_100ms,
+                                    (double)sample->threshold,
+                                    sample->is_peak,
+                                    sample->instant_bpm);
+            if (line_len <= 0
+                || line_len >= (int)(sizeof(sd_batch) - batch_len)) {
+                ESP_LOGW(TAG_ECG, "SD batch full, flushing early");
+                break;
+            }
+            batch_len += line_len;
+            pending_head = (pending_head + 1U) % RPEAK_PENDING_SAMPLES;
+            pending_count--;
+        }
+
         if (batch_len > 0) {
             xSemaphoreTake(sd_access_mutex, portMAX_DELAY);
-            if (record_active) {
+            if (ecg_sd_file[0] != '\0') {
                 uint32_t now_ms = ecg_now_ms();
 
                 if ((now_ms - ecg_sd_segment_start_ms) >= ECG_SD_SEGMENT_MS

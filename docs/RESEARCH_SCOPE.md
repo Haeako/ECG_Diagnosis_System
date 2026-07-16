@@ -34,13 +34,36 @@ Clean effect: compare PanTompkins(D(x)) with dataset R annotations
 Utility task: compare PanTompkins(D(y)) with dataset R annotations
 ```
 
-The primary CleanGuard components are PRD and derivative RMSE. RMSE and cosine
-similarity are supporting components. The primary CleanGuard validation endpoint
+The primary global CleanGuard components are PRD and derivative RMSE. RMSE and
+cosine similarity are supporting components. CleanGuard+ adds the following
+local protocol for a sampling rate `fs`:
+
+```text
+windows: 1 second, 0.5-second hop
+CG-WorstRMSE: maximum window RMSE
+CG-MaxLocalPRD: maximum window PRD
+CG-BoundaryRMSE: RMSE over the first and last second
+CG-SC-PRD: PRD after the best integer shift limited to +/-20 ms
+```
+
+For clean input `x`, clean output `xc = D(x)`, and sliding-window set `W`:
+
+```text
+CG-WorstRMSE = max_{w in W} RMSE(x[w], xc[w])
+CG-MaxLocalPRD = max_{w in W} PRD(x[w], xc[w])
+tau* = argmin_{|tau| <= 20 ms} RMSE(x, shift(xc, tau))
+CG-SC-PRD = PRD(x, shift(xc, tau*))
+```
+
+Shift correction is an auxiliary cause-analysis metric. Exact sample alignment
+remains primary, and DTW is excluded because it can hide clinically relevant
+timing errors. The primary CleanGuard validation endpoint
 is clean-passthrough R-peak F1; miss rate and RR MAE expose clinically
 interpretable failure modes. The same endpoints after noisy-input denoising are
 reported separately as practical utility, not conflated with clean damage.
 
-Results are computed per window and aggregated across records. Report mean,
+Results are computed per window; local maxima are taken within each window
+before aggregation across records. Report mean,
 standard deviation, median, and a record-level confidence interval in the paper.
 Do not concatenate all samples into one pseudo-observation.
 

@@ -14,11 +14,15 @@ import wfdb
 from scipy import signal
 
 from ecg_benchmark.baselines import fir_bandpass, fir_highpass, wavelet_denoise
-from ecg_benchmark.metrics import clean_guard, reconstruction_metrics
+from ecg_benchmark.metrics import clean_guard_protocol, reconstruction_metrics
 from ecg_benchmark.rpeaks import detect_r_peaks_pan_tompkins, score_r_peaks
 
 
-DEFAULT_RECORDS = ("sel123", "sel233", "sel302", "sel307", "sel820", "sel853")
+DEFAULT_RECORDS = (
+    "sel123", "sel233", "sel302", "sel307", "sel820", "sel853",
+    "sel16420", "sel16795", "sele0106", "sele0121", "sel32", "sel49",
+    "sel14046", "sel15814",
+)
 BEAT_SYMBOLS = set("NLRBAaJSVrFejE/fQ?")
 
 
@@ -36,6 +40,22 @@ def methods() -> tuple[Method, ...]:
         Method("fir_bandpass_0p5_40hz", "fir", lambda x, fs: fir_bandpass(x, fs, 0.5, 40.0, 101)),
         Method("wavelet_db4", "wavelet", lambda x, fs: wavelet_denoise(x, "db4")),
         Method("wavelet_sym4", "wavelet", lambda x, fs: wavelet_denoise(x, "sym4")),
+        Method(
+            "wavelet_sym4_bw_tuned", "wavelet",
+            lambda x, fs: wavelet_denoise(x, "sym4", 7, "soft", 0.05, 0.75),
+        ),
+        Method(
+            "wavelet_sym9_cg15", "wavelet",
+            lambda x, fs: wavelet_denoise(x, "sym9", 7, "soft", 0.2, 0.6),
+        ),
+        Method(
+            "wavelet_sym5_cg20", "wavelet",
+            lambda x, fs: wavelet_denoise(x, "sym5", 8, "soft", 0.1, 0.35),
+        ),
+        Method(
+            "wavelet_db4_snr", "wavelet",
+            lambda x, fs: wavelet_denoise(x, "db4", 8, "soft", 0.05, 0.15),
+        ),
     )
 
 
@@ -144,7 +164,7 @@ def run(args: argparse.Namespace) -> list[dict[str, object]]:
                     "annotation": annotation,
                 }
                 row.update(reconstruction_metrics(clean[None, :], noisy[None, :], denoised[None, :]))
-                row.update(clean_guard(clean[None, :], clean_output[None, :]))
+                row.update(clean_guard_protocol(clean[None, :], clean_output[None, :], fs=fs))
                 row.update(
                     prefixed(
                         "NoisyDenoised",

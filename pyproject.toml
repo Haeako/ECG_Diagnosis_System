@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ecg-cleanguard-benchmark"
-version = "0.1.0"
-description = "CleanGuard and R-peak preservation benchmark for ECG denoising"
+version = "0.2.0"
+description = "CleanGuard+ local-damage and R-peak preservation benchmark for ECG denoising"
 requires-python = ">=3.10"
 dependencies = [
   "matplotlib>=3.7",

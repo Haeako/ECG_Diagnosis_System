@@ -38,11 +38,17 @@ Reported metrics are:
 
 - utility: SNR, SNR improvement, PRD, RMSE, derivative RMSE, cosine similarity;
 - clean passthrough: CleanGuard PRD/RMSE/derivative RMSE/cosine similarity;
+- local clean damage (CleanGuard+): worst 1-second RMSE, maximum local PRD,
+  first/last-second boundary RMSE, and an auxiliary shift-corrected PRD with a
+  maximum lag of 20 ms;
 - downstream: R-peak TP/FP/FN, precision, recall, F1, miss rate, false discovery
   rate, timing MAE, and RR-interval MAE. These are reported separately for
   `D(noisy)` (`NoisyDenoised_*`) and `D(clean)` (`CleanPass_*`).
 
-CleanGuard is reported as a metric vector. It is not collapsed into one score
+CleanGuard is reported as a metric vector. CleanGuard+ prevents a short local
+or overlap-add boundary artifact from being hidden by a whole-window average.
+Shift correction is diagnostic only; primary scores preserve exact sample
+alignment and do not use DTW. The vector is not collapsed into one score
 without a pre-registered normalization and weight sensitivity analysis.
 
 ## Environment

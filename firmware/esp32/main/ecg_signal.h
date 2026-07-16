@@ -8,6 +8,9 @@ typedef struct {
     uint32_t timestamp_ms;
     uint16_t raw_adc;
     int16_t raw_centered;
+    int16_t notch_49_51hz;
+    float ma_qrs_100ms;
+    float threshold;
     /* Zero: the breakout board already provides the analog 0.5 Hz HPF. */
     int16_t baseline;
     /* Same as raw_centered; retained for CSV/BLE compatibility. */

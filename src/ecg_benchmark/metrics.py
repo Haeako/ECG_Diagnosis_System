@@ -140,3 +140,109 @@ def clean_guard(
         "CleanGuard_dRMSE": derivative_rmse(clean, clean_output, reduction=reduction),
         "CleanGuard_CosSim": cosine_similarity(clean, clean_output, reduction=reduction),
     }
+
+
+def _windowed_errors(
+    reference: np.ndarray,
+    estimate: np.ndarray,
+    window: int,
+    hop: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    ref = _as_float_array(reference)
+    est = _as_float_array(estimate)
+    if ref.shape != est.shape:
+        raise ValueError("reference and estimate must have the same shape")
+    window = min(window, ref.shape[-1])
+    starts = list(range(0, max(1, ref.shape[-1] - window + 1), hop))
+    final = ref.shape[-1] - window
+    if starts[-1] != final:
+        starts.append(final)
+    local_rmse, local_prd = [], []
+    for start in starts:
+        stop = start + window
+        error = ref[..., start:stop] - est[..., start:stop]
+        local_rmse.append(np.sqrt(np.mean(np.square(error), axis=-1)))
+        local_prd.append(100.0 * np.sqrt(
+            _energy(error) / (_energy(ref[..., start:stop]) + EPS)
+        ))
+    return np.stack(local_rmse, axis=-1), np.stack(local_prd, axis=-1)
+
+
+def _shift_corrected_metrics(
+    reference: np.ndarray,
+    estimate: np.ndarray,
+    max_shift_samples: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ref = _as_float_array(reference)
+    est = _as_float_array(estimate)
+    leading_shape = ref.shape[:-1]
+    ref_rows = ref.reshape(-1, ref.shape[-1])
+    est_rows = est.reshape(-1, est.shape[-1])
+    best_rmse = np.full(len(ref_rows), np.inf)
+    best_prd = np.full(len(ref_rows), np.inf)
+    best_shift = np.zeros(len(ref_rows), dtype=np.int64)
+    for shift in range(-max_shift_samples, max_shift_samples + 1):
+        if shift < 0:
+            aligned_ref, aligned_est = ref_rows[:, -shift:], est_rows[:, :shift]
+        elif shift > 0:
+            aligned_ref, aligned_est = ref_rows[:, :-shift], est_rows[:, shift:]
+        else:
+            aligned_ref, aligned_est = ref_rows, est_rows
+        error = aligned_ref - aligned_est
+        values = np.sqrt(np.mean(np.square(error), axis=-1))
+        improved = values < best_rmse
+        best_rmse[improved] = values[improved]
+        best_prd[improved] = 100.0 * np.sqrt(
+            _energy(error[improved]) / (_energy(aligned_ref[improved]) + EPS)
+        )
+        best_shift[improved] = shift
+    return (
+        best_rmse.reshape(leading_shape),
+        best_prd.reshape(leading_shape),
+        best_shift.reshape(leading_shape),
+    )
+
+
+def clean_guard_protocol(
+    clean: np.ndarray,
+    clean_output: np.ndarray,
+    fs: float,
+    local_window_sec: float = 1.0,
+    local_hop_sec: float = 0.5,
+    boundary_sec: float = 1.0,
+    max_shift_ms: float = 20.0,
+    reduction: str = "mean",
+) -> dict[str, float | np.ndarray]:
+    """CleanGuard+ protocol for global, local, boundary, and delay damage.
+
+    Shift-corrected values are diagnostic only. Primary metrics preserve exact
+    sample alignment and deliberately avoid dynamic time warping.
+    """
+
+    ref = _as_float_array(clean)
+    out = _as_float_array(clean_output)
+    if ref.shape != out.shape:
+        raise ValueError("clean and clean_output must have the same shape")
+    if ref.shape[-1] < 2:
+        raise ValueError("CleanGuard+ requires at least two samples")
+    if fs <= 0:
+        raise ValueError("fs must be positive")
+
+    metrics = clean_guard(ref, out, reduction=reduction)
+    window = max(2, int(round(local_window_sec * fs)))
+    hop = max(1, int(round(local_hop_sec * fs)))
+    local_rmse, local_prd = _windowed_errors(ref, out, window, hop)
+    metrics["CleanGuard_WorstLocalRMSE"] = _reduce(np.max(local_rmse, axis=-1), reduction)
+    metrics["CleanGuard_MaxLocalPRD"] = _reduce(np.max(local_prd, axis=-1), reduction)
+
+    boundary = min(ref.shape[-1] // 2, max(1, int(round(boundary_sec * fs))))
+    boundary_ref = np.concatenate((ref[..., :boundary], ref[..., -boundary:]), axis=-1)
+    boundary_out = np.concatenate((out[..., :boundary], out[..., -boundary:]), axis=-1)
+    metrics["CleanGuard_BoundaryRMSE"] = rmse(boundary_ref, boundary_out, reduction=reduction)
+
+    max_shift = max(0, int(round(max_shift_ms * fs / 1000.0)))
+    corrected_rmse, corrected_prd, shifts = _shift_corrected_metrics(ref, out, max_shift)
+    metrics["CleanGuard_ShiftCorrectedRMSE"] = _reduce(corrected_rmse, reduction)
+    metrics["CleanGuard_ShiftCorrectedPRD"] = _reduce(corrected_prd, reduction)
+    metrics["CleanGuard_AbsShiftMs"] = _reduce(np.abs(shifts) * 1000.0 / fs, reduction)
+    return metrics

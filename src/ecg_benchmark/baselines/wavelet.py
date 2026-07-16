@@ -13,12 +13,19 @@ def _pywt_module():
     return pywt
 
 
-def _denoise_1d(x: np.ndarray, wavelet: str, level: int | None, mode: str) -> np.ndarray:
+def _denoise_1d(
+    x: np.ndarray,
+    wavelet: str,
+    level: int | None,
+    mode: str,
+    threshold_scale: float,
+    approximation_scale: float,
+) -> np.ndarray:
     pywt = _pywt_module()
     coeffs = pywt.wavedec(x, wavelet=wavelet, mode="symmetric", level=level)
     sigma = np.median(np.abs(coeffs[-1])) / 0.6745
-    threshold = sigma * np.sqrt(2.0 * np.log(x.size))
-    denoised_coeffs = [coeffs[0]]
+    threshold = threshold_scale * sigma * np.sqrt(2.0 * np.log(x.size))
+    denoised_coeffs = [approximation_scale * coeffs[0]]
     if threshold <= 0 or not np.isfinite(threshold):
         denoised_coeffs.extend(coeffs[1:])
     else:
@@ -32,11 +39,19 @@ def wavelet_denoise(
     wavelet: str = "db4",
     level: int | None = None,
     mode: str = "soft",
+    threshold_scale: float = 1.0,
+    approximation_scale: float = 1.0,
 ) -> np.ndarray:
     """Apply wavelet thresholding over the last axis."""
 
     x = np.asarray(signal_in, dtype=np.float64)
-    return np.apply_along_axis(lambda row: _denoise_1d(row, wavelet, level, mode), -1, x)
+    return np.apply_along_axis(
+        lambda row: _denoise_1d(
+            row, wavelet, level, mode, threshold_scale, approximation_scale
+        ),
+        -1,
+        x,
+    )
 
 
 def _swt_denoise_1d(
