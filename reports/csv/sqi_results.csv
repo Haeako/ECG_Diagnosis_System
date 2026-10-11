@@ -1,0 +1,11 @@
+domain,protocol,method,split,windows,roc_auc,average_precision,balanced_accuracy,threshold,kept,coverage,risk_bad_among_kept,max_allowed_risk,approved,notes
+SQI,sqa_baseline_screening,Agreement_only,test,6720,0.823471,0.797012,0.568551,,0,0.000000,,,false,agreement_not_sufficient
+SQI,sqa_baseline_screening,Logistic_3SQI,test,6720,0.813841,0.808883,0.776259,0.870316,419,0.062351,0.062053,0.050000,false,risk_above_requirement
+SQI,sqa_baseline_screening,ExtraTrees_14SQI,test,6720,0.811687,0.794127,0.788073,0.768611,1163,0.173065,0.196905,0.050000,false,selected_candidate_but_deployment_rejected
+SQI,sqa_baseline_screening,RandomForest_14SQI,test,6720,0.810589,0.790116,0.801310,0.912796,949,0.141220,0.180190,0.050000,false,risk_above_requirement
+SQI,sqa_baseline_screening,Template_rule_inspired,test,6720,0.783118,0.777590,0.725113,,0,0.000000,,,false,no_operating_threshold
+SQI,sqa_baseline_screening,Logistic_14SQI,test,6720,0.741473,0.728638,0.740907,0.949493,544,0.080952,0.191176,0.050000,false,risk_above_requirement
+SQI,quality_gate_feasibility_v1,ExtraTrees_14SQI,development_OOF,10498,,,,0.768611,,0.143742,0.049702,0.050000,false,calibration_only
+SQI,quality_gate_feasibility_v1,ExtraTrees_14SQI,held_out_test,6720,0.811687,,,0.768611,1163,0.173065,0.196905,0.050000,false,firmware_export_rejected
+SQI,ecg_quality_emg_v1,strict_rule_gate,development,10500,,,,,0,0.000000,,0.050000,false,no_feasible_threshold
+SQI,ecg_quality_emg_v1,strict_rule_gate,test,6720,,,,,0,0.000000,,0.050000,false,no_feasible_threshold

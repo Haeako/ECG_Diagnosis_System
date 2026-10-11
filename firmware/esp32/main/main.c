@@ -1,7 +1,7 @@
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "driver/gpio.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_system.h"
@@ -9,74 +9,71 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "components/esp_ble/ecg_ble.h"
 #include "ecg_pipeline.h"
+#include "utils/app_recovery.h"
+#include "utils/user_button.h"
 
-#define RECORD_BUTTON_GPIO     GPIO_NUM_0
-#define RECORD_LED_GPIO        GPIO_NUM_21
-#define SD_DETECT_GPIO         GPIO_NUM_35
-#define RECORD_BUTTON_DEBOUNCE 50
-#define RECORD_BUTTON_POLL     20
-#define INIT_HEALTH_RETRY_MS   500
-#define IDLE_HEALTH_CHECK_MS   1000
-#define APP_MIN_FREE_HEAP      (20 * 1024)
-#define APP_MIN_STATE_STACK    512
-#define SD_CARD_PRESENT_LEVEL 1
-#define INIT_RESTART_FAIL_LIMIT 20
+/*===========================================================*/
+/*SYSTEM MACRO                                               */
+/*===========================================================*/
+#define INIT_HEALTH_RETRY_MS        500
+#define IDLE_HEALTH_CHECK_MS        1000
+/*===========================================================*/
+/*APP MACRO                                               */
+/*===========================================================*/
+#define RECORD_BUTTON_GPIO          GPIO_NUM_0
+#define RECORD_LED_GPIO             GPIO_NUM_21
+#define SD_DETECT_GPIO              GPIO_NUM_35
+
+#define RECORD_BUTTON_POLL          20
+
+#define APP_MIN_FREE_HEAP           (20 * 1024)
+#define APP_MIN_STATE_STACK         512
+#define SD_CARD_PRESENT_LEVEL       1
+#define INIT_RESTART_FAIL_LIMIT     20
+
+#define APP_NOTIFY_SD_DETECT        (1UL << 0)
+#define APP_NOTIFY_BLE_COMMAND      (1UL << 1)
+
+/*===========================================================*/
+/* Private typedef                                           */
+/*===========================================================*/
 typedef enum {
     ECG_STATE_INIT,
     ECG_STATE_IDLE,
     ECG_STATE_RECORD,
 } ecg_state_t;
 
-static const char *TAG_APP = "ECG_APP";
-static ecg_state_t ecg_state = ECG_STATE_INIT;
-static TaskHandle_t state_task_handle = NULL;
-static volatile bool sd_detect_event_pending = false;
-static volatile uint32_t pipeline_event_pending = 0;
-static volatile ecg_pipeline_event_t last_pipeline_event = ECG_PIPELINE_EVENT_SD_FAULT;
-static volatile esp_err_t last_pipeline_error = ESP_OK;
-static volatile bool pipeline_recovery_pending = false;
-static volatile ecg_pipeline_event_t pending_recovery_event = ECG_PIPELINE_EVENT_SD_FAULT;
-static TickType_t last_init_health_check = 0;
-static TickType_t last_idle_health_check = 0;
-static uint32_t init_health_fail_count = 0;
 
-#define PIPELINE_EVENT_BIT(event) (1UL << (uint32_t)(event))
+/*===========================================================*/
+/* Function prototpye                                        */
+/*===========================================================*/
 
-static void IRAM_ATTR sd_detect_isr(void *arg)
-{
-    BaseType_t higher_priority_task_woken = pdFALSE;
+static void sd_detect_isr       (void *arg);
+static void event_handler       (ecg_pipeline_event_t event, esp_err_t error, const char *detail);
+static void ble_command_handler (ecg_ble_command_t command);
 
-    (void)arg;
-    sd_detect_event_pending = true;
-    if (state_task_handle != NULL) {
-        vTaskNotifyGiveFromISR(state_task_handle, &higher_priority_task_woken);
-    }
-    if (higher_priority_task_woken == pdTRUE) {
-        portYIELD_FROM_ISR();
-    }
-}
+static void app_storage_init    (void);
+static void app_user_button_init(void);
 
-static void app_pipeline_event_handler(ecg_pipeline_event_t event,
-                                       esp_err_t error,
-                                       const char *detail)
-{
-    (void)detail;
+static const char                   *TAG_APP                    = "ECG_APP";
+static ecg_state_t                  ecg_state                   = ECG_STATE_INIT;
+static TaskHandle_t                 state_task_handle           = NULL;
 
-    last_pipeline_event = event;
-    last_pipeline_error = error;
-    pipeline_event_pending |= PIPELINE_EVENT_BIT(event);
+static ecg_pipeline_event_t         pending_event               = ECG_PIPELINE_EVENT_SD_FAULT;
+static volatile ecg_ble_command_t   pending_ble_command         = ECG_BLE_COMMAND_NONE;
+static bool                         pipeline_recovery_pending   = false;
 
-    if (state_task_handle != NULL) {
-        xTaskNotifyGive(state_task_handle);
-    }
-}
+static TickType_t                   last_init_health_check      = 0;
+static TickType_t                   last_idle_health_check      = 0;
+static uint32_t                     init_health_fail_count      = 0;
 
 static void app_storage_init(void)
 {
     esp_err_t ret = nvs_flash_init();
 
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ESP_OK != ret) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -84,160 +81,45 @@ static void app_storage_init(void)
     ESP_ERROR_CHECK(ret);
 }
 
-static void app_controls_init(void)
+static void app_user_button_init(void)
 {
-    gpio_config_t button_cfg = {
-        .pin_bit_mask = 1ULL << RECORD_BUTTON_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&button_cfg));
+    ESP_ERROR_CHECK(user_button_init(RECORD_BUTTON_GPIO, RECORD_LED_GPIO));
 
-    gpio_config_t led_cfg = {
-        .pin_bit_mask = 1ULL << RECORD_LED_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    ESP_ERROR_CHECK(gpio_config(&led_cfg));
-    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
-
-    gpio_config_t sd_detect_cfg = {
+    gpio_config_t sd_detect_config = {
         .pin_bit_mask = 1ULL << SD_DETECT_GPIO,
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_ANYEDGE,
     };
-    ESP_ERROR_CHECK(gpio_config(&sd_detect_cfg));
-    esp_err_t isr_ret = gpio_install_isr_service(0);
-    if (isr_ret != ESP_OK && isr_ret != ESP_ERR_INVALID_STATE) {
-        ESP_ERROR_CHECK(isr_ret);
+    ESP_ERROR_CHECK(gpio_config(&sd_detect_config));
+
+    esp_err_t ret = gpio_install_isr_service(0);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(ret);
     }
     ESP_ERROR_CHECK(gpio_isr_handler_add(SD_DETECT_GPIO, sd_detect_isr, NULL));
 }
 
-static bool record_button_pressed(void)
-{
-    static int stable_level = 1;
-    static int previous_level = 1;
-    static TickType_t last_change = 0;
-    int level = gpio_get_level(RECORD_BUTTON_GPIO);
-    TickType_t now = xTaskGetTickCount();
-
-    if (level != previous_level) {
-        previous_level = level;
-        last_change = now;
-    }
-
-    if (level != stable_level
-        && (now - last_change) >= pdMS_TO_TICKS(RECORD_BUTTON_DEBOUNCE)) {
-        stable_level = level;
-        return stable_level == 0;
-    }
-
-    return false;
-}
-
-static bool app_health_check(const char *context)
-{
-    bool heap_ok = heap_caps_check_integrity_all(false);
-    uint32_t free_heap = esp_get_free_heap_size();
-    UBaseType_t state_stack = uxTaskGetStackHighWaterMark(NULL);
-    int sd_det_level = gpio_get_level(SD_DETECT_GPIO);
-
-    if (!heap_ok) {
-        ESP_LOGE(TAG_APP, "Health[%s]: heap integrity failed", context);
-        return false;
-    }
-
-    if (free_heap < APP_MIN_FREE_HEAP) {
-        ESP_LOGE(TAG_APP,
-                 "Health[%s]: low heap (%lu bytes)",
-                 context,
-                 (unsigned long)free_heap);
-        return false;
-    }
-
-    if (state_stack < APP_MIN_STATE_STACK) {
-        ESP_LOGE(TAG_APP,
-                 "Health[%s]: low state task stack (%lu words)",
-                 context,
-                 (unsigned long)state_stack);
-        return false;
-    }
-    if (gpio_get_level(SD_DETECT_GPIO) != SD_CARD_PRESENT_LEVEL) {
-        return false;
-    }
-    ESP_LOGD(TAG_APP,
-             "Health[%s]: OK heap=%lu stack=%lu sd_det=%d",
-             context,
-             (unsigned long)free_heap,
-             (unsigned long)state_stack,
-             sd_det_level);
-    return true;
-}
-
-static const char *pipeline_event_name(ecg_pipeline_event_t event)
-{
-    switch (event) {
-    case ECG_PIPELINE_EVENT_SD_FAULT:
-        return "SD_FAULT";
-    case ECG_PIPELINE_EVENT_ADC_FAULT:
-        return "ADC_FAULT";
-    case ECG_PIPELINE_EVENT_BUFFER_FAULT:
-        return "BUFFER_FAULT";
-    case ECG_PIPELINE_EVENT_TASK_FAULT:
-        return "TASK_FAULT";
-    case ECG_PIPELINE_EVENT_BLE_FAULT:
-        return "BLE_FAULT";
-    default:
-        return "UNKNOWN";
-    }
-}
-
-static ecg_pipeline_event_t pipeline_recovery_event_from_bits(uint32_t events)
-{
-    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_SD_FAULT)) {
-        return ECG_PIPELINE_EVENT_SD_FAULT;
-    }
-    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_ADC_FAULT)) {
-        return ECG_PIPELINE_EVENT_ADC_FAULT;
-    }
-    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_BUFFER_FAULT)) {
-        return ECG_PIPELINE_EVENT_BUFFER_FAULT;
-    }
-    if (events & PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_TASK_FAULT)) {
-        return ECG_PIPELINE_EVENT_TASK_FAULT;
-    }
-    return ECG_PIPELINE_EVENT_BLE_FAULT;
-}
-
 static void enter_idle_state(void)
 {
-    ecg_pipeline_enter_idle();
-    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
+    ecg_pipeline_stop_record();
+    user_button_set_recording_led(false);
     ecg_state = ECG_STATE_IDLE;
     init_health_fail_count = 0;
-    ESP_LOGI(TAG_APP, "State: IDLE");
 }
 
 static void enter_init_state(void)
 {
-    ecg_pipeline_enter_init();
-    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 0));
+    ecg_pipeline_stop_record();
+    user_button_set_recording_led(false);
     ecg_state = ECG_STATE_INIT;
     last_init_health_check = 0;
-    ESP_LOGI(TAG_APP, "State: INIT (SD DET level=%d)",
-             gpio_get_level(SD_DETECT_GPIO));
 }
 
 static void enter_record_state(void)
 {
-    esp_err_t ret = ecg_pipeline_enter_recording();
+    esp_err_t ret = ecg_pipeline_start_recording();
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG_APP, "RECORD blocked (%s)", esp_err_to_name(ret));
@@ -245,63 +127,74 @@ static void enter_record_state(void)
         return;
     }
 
-    ESP_ERROR_CHECK(gpio_set_level(RECORD_LED_GPIO, 1));
+    user_button_set_recording_led(true);
     ecg_state = ECG_STATE_RECORD;
-    ESP_LOGI(TAG_APP, "State: RECORD");
 }
 
-static void ecg_state_task(void *pvParameters)
+static void handle_ble_command(ecg_ble_command_t command)
+{
+    switch (command) {
+    case ECG_BLE_COMMAND_START:
+        if (ecg_state == ECG_STATE_IDLE) {
+            enter_record_state();
+        }
+        break;
+    case ECG_BLE_COMMAND_STOP:
+        if (ecg_state == ECG_STATE_RECORD) {
+            enter_idle_state();
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static void state_machine_task(void *pvParameters)
 {
     (void)pvParameters;
-
+    enter_idle_state();
     while (1) {
+        uint32_t notifications = 0;
+        (void)xTaskNotifyWait(0, UINT32_MAX, &notifications, pdMS_TO_TICKS(RECORD_BUTTON_POLL));
         TickType_t now = xTaskGetTickCount();
 
-        if (sd_detect_event_pending) {
-            sd_detect_event_pending = false;
+        if (notifications & APP_NOTIFY_SD_DETECT) {
             enter_init_state();
         }
 
-        if (pipeline_event_pending != 0) {
-            uint32_t events = pipeline_event_pending;
-            pipeline_event_pending = 0;
-            ESP_LOGW(TAG_APP,
-                     "Pipeline fault event(s)=0x%lx last=%s error=%s",
-                     (unsigned long)events,
-                     pipeline_event_name(last_pipeline_event),
-                     esp_err_to_name(last_pipeline_error));
-            if (events & (PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_SD_FAULT)
-                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_ADC_FAULT)
-                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_BUFFER_FAULT)
-                          | PIPELINE_EVENT_BIT(ECG_PIPELINE_EVENT_TASK_FAULT))) {
-                pending_recovery_event = pipeline_recovery_event_from_bits(events);
+        uint32_t pipeline_events = notifications & APP_RECOVERY_PIPELINE_EVENT_MASK;
+        if (pipeline_events != 0U) {
+            ESP_LOGW(TAG_APP, "Pipeline fault event(s)=0x%lx",
+                     (unsigned long)pipeline_events);
+            if (app_recovery_event_requires_reset(pipeline_events)) {
+                pending_event = app_recovery_event_from_notifications(pipeline_events);
                 pipeline_recovery_pending = true;
                 enter_init_state();
             }
         }
 
+        if (notifications & APP_NOTIFY_BLE_COMMAND) {
+            handle_ble_command(pending_ble_command);
+        }
+
         if (ecg_state == ECG_STATE_INIT
-            && (last_init_health_check == 0
-                || (now - last_init_health_check) >= pdMS_TO_TICKS(INIT_HEALTH_RETRY_MS))) {
+            && (last_init_health_check == 0 || (now - last_init_health_check) >= pdMS_TO_TICKS(INIT_HEALTH_RETRY_MS))) {
             last_init_health_check = now;
 
             if (pipeline_recovery_pending) {
-                esp_err_t recovery_ret = ecg_pipeline_recover_from_event(
-                    pending_recovery_event);
+                esp_err_t recovery_ret = ecg_pipeline_recover_from_event(pending_event);
                 if (recovery_ret == ESP_OK) {
                     pipeline_recovery_pending = false;
-                    ESP_LOGI(TAG_APP,
-                             "Recovery from %s completed",
-                             pipeline_event_name(pending_recovery_event));
                 } else {
-                    ESP_LOGW(TAG_APP,
-                             "Recovery from %s failed (%s), staying in INIT",
-                             pipeline_event_name(pending_recovery_event),
-                             esp_err_to_name(recovery_ret));
+                    ESP_LOGW(TAG_APP, "Recovery from event=%d failed (%s), staying in INIT",
+                             pending_event, esp_err_to_name(recovery_ret));
                 }
             }
 
-            if (!pipeline_recovery_pending && app_health_check("init")) {
+            if (!pipeline_recovery_pending
+                && app_recovery_health_check(SD_DETECT_GPIO, SD_CARD_PRESENT_LEVEL,
+                                             APP_MIN_FREE_HEAP, APP_MIN_STATE_STACK,
+                                             "init")) {
                 enter_idle_state();
             } else {
                 init_health_fail_count++;
@@ -320,38 +213,78 @@ static void ecg_state_task(void *pvParameters)
             && (last_idle_health_check == 0
                 || (now - last_idle_health_check) >= pdMS_TO_TICKS(IDLE_HEALTH_CHECK_MS))) {
             last_idle_health_check = now;
-            if (!app_health_check("idle")) {
+            if (!app_recovery_health_check(SD_DETECT_GPIO, SD_CARD_PRESENT_LEVEL,
+                                           APP_MIN_FREE_HEAP, APP_MIN_STATE_STACK,
+                                           "idle")) {
                 enter_init_state();
             }
         }
 
-        if (record_button_pressed()) {
+        if (user_button_take_press()) {
             if (ecg_state == ECG_STATE_IDLE) {
                 enter_record_state();
             } else if (ecg_state == ECG_STATE_RECORD) {
                 enter_idle_state();
             }
         }
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(RECORD_BUTTON_POLL));
     }
 }
 
 void app_main(void)
 {
+    /* JTAG is the primary debug transport; retain warnings and faults on UART. */
+    esp_log_level_set("*", ESP_LOG_WARN);
     app_storage_init();
-    app_controls_init();
-    ecg_pipeline_set_event_callback(app_pipeline_event_handler);
+    app_user_button_init();
+    ecg_pipeline_set_event_callback(event_handler);
+    ecg_ble_set_command_callback(ble_command_handler);
 
     if (ecg_pipeline_init() != ESP_OK) {
         ESP_LOGE(TAG_APP, "ECG pipeline init failed");
         return;
     }
 
-    ecg_pipeline_start();
-    enter_idle_state();
-
-    if (xTaskCreatePinnedToCore(ecg_state_task, "State_Task", 3072, NULL, 2,
-                                &state_task_handle, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCore(state_machine_task,
+                                "State_Task",
+                                3072,
+                                NULL,
+                                2,
+                                &state_task_handle,
+                                 0) != pdPASS) {
         ESP_LOGE(TAG_APP, "State task creation failed");
+        return;
+    }
+    ecg_pipeline_start_task();
+}
+
+static void IRAM_ATTR sd_detect_isr(void *arg) {
+    BaseType_t higher_priority_task_woken = pdFALSE;
+
+    (void)arg;
+    if (state_task_handle != NULL) {
+        xTaskNotifyFromISR(state_task_handle, APP_NOTIFY_SD_DETECT, eSetBits,
+                           &higher_priority_task_woken);
+    }
+    if (higher_priority_task_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+
+static void event_handler(ecg_pipeline_event_t event, esp_err_t error, const char *detail)
+{
+    (void)error;
+    (void)detail;
+
+    if (state_task_handle != NULL) {
+        xTaskNotify(state_task_handle, APP_RECOVERY_PIPELINE_EVENT_BIT(event), eSetBits);
+    }
+}
+
+static void ble_command_handler(ecg_ble_command_t command)
+{
+    pending_ble_command = command;
+    if (state_task_handle != NULL) {
+        xTaskNotify(state_task_handle, APP_NOTIFY_BLE_COMMAND, eSetBits);
     }
 }

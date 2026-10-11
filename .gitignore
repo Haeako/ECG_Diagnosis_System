@@ -94,6 +94,11 @@ outputs/*
 !outputs/.gitkeep
 checkpoints/
 *.pkl
+*.pt
+*.pth
+*.h5
+*.onnx
+*.tflite
 *.npy
 *.npz
 espidf_ws/data
@@ -103,3 +108,9 @@ espidf_ws/qrs_results/
 espidf_ws/pre_move_data_preview.svg
 espidf_ws/visualize/
 espidf_ws/ECG_FILTER_POWER_REPORT.md
+espidf_ws/pipeline_module_results_pre_move_positive_thr400_legend/
+espidf_ws/pipeline_module_results_pre_move_positive_thr400/
+reports/TONG_BAO_CAO_TIEN_DO_ECG.tex
+.vscode/settings.json
+Integrated_PCB/*
+A_signal_quality_assessment–ba.pdf

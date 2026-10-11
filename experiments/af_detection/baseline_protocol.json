@@ -1,0 +1,42 @@
+{
+  "task": "AF screening from single-lead ECG RR intervals",
+  "dataset_primary": "MIT-BIH Atrial Fibrillation Database (AFDB)",
+  "window_rr_intervals": 30,
+  "split_unit": "record_id",
+  "seed": 42,
+  "test_fraction": 0.25,
+  "feature_sets": ["all_15", "selected_on_training_records_only"],
+  "ai_baselines": [
+    "logistic_regression",
+    "random_forest",
+    "extra_trees",
+    "xgboost"
+  ],
+  "selection_metric": "balanced_accuracy",
+  "report_metrics": [
+    "balanced_accuracy",
+    "sensitivity",
+    "specificity",
+    "precision",
+    "f1",
+    "roc_auc"
+  ],
+  "deployment_candidate": "extra_trees_selected_int8",
+  "hardware_metrics": [
+    "firmware_flash_bytes",
+    "dram_used_bytes",
+    "iram_used_bytes",
+    "minimum_free_heap_bytes",
+    "stack_high_water_words",
+    "latency_us_p50",
+    "latency_us_p95",
+    "latency_us_max",
+    "comparisons_mean"
+  ],
+  "required_ablations": [
+    "annotation_RR_vs_firmware_detected_RR",
+    "all_features_vs_selected_features",
+    "float_vs_int8",
+    "quality_reject_off_vs_on"
+  ]
+}

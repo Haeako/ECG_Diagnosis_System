@@ -2,12 +2,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "FreeRTOSConfig.h"
 #include "esp_log.h"
-#include "esp_vfs.h"
 #include "esp_vfs_fat.h"
 #include "driver/sdspi_host.h"
-#include "driver/spi_master.h"
-#include "driver/gpio.h"
 #include "sdmmc_cmd.h"
 
 #include "sd_spi.h"
@@ -113,13 +111,12 @@ esp_err_t sd_spi_write(const char *filename, const void *data, size_t len)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Mở file ở chế độ append binary
     sd_file = fopen(filename, "ab");
     if (sd_file == NULL) {
         ESP_LOGE(TAG, "Failed to open file: %s", filename);
         return ESP_FAIL;
     }
-
+    
     // Ghi dữ liệu
     size_t written = fwrite(data, 1, len, sd_file);
     if (written != len) {
@@ -128,12 +125,9 @@ esp_err_t sd_spi_write(const char *filename, const void *data, size_t len)
         sd_file = NULL;
         return ESP_FAIL;
     }
-
     // Đóng file
     fclose(sd_file);
     sd_file = NULL;
-
-    ESP_LOGI(TAG, "Wrote %d bytes to %s", written, filename);
     return ESP_OK;
 }
 
@@ -151,6 +145,5 @@ void sd_spi_close(void)
         sdmmc_host_t host = SDSPI_HOST_DEFAULT();
         sdspi_host_deinit();
         spi_bus_free(host.slot);
-        ESP_LOGI(TAG, "SD card unmounted and SPI bus freed");
     }
 }

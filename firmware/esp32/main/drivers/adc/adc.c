@@ -15,7 +15,6 @@ void ADC_Init() {
       .clk_src = ADC_DIGI_CLK_SRC_DEFAULT};
 
   ESP_ERROR_CHECK(adc_oneshot_new_unit(&adc_handle_cfg, &adc_handle));
-  ESP_LOGI(ECG_Sensor, "ADC handle created");
 
   // ADC configure
   adc_oneshot_chan_cfg_t adc_cfg = {.atten = ADC_VoltRange,
@@ -23,7 +22,6 @@ void ADC_Init() {
 
   ESP_ERROR_CHECK(
       adc_oneshot_config_channel(adc_handle, ADC_Channel, &adc_cfg));
-  ESP_LOGI(ECG_Sensor, "ADC configured");
 }
 
 void ADC_Deinit(void)
@@ -34,5 +32,4 @@ void ADC_Deinit(void)
 
   ESP_ERROR_CHECK(adc_oneshot_del_unit(adc_handle));
   adc_handle = NULL;
-  ESP_LOGI(ECG_Sensor, "ADC handle deleted");
 }

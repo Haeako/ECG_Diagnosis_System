@@ -17,6 +17,18 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.4"]
+af = [
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+  "shap>=0.52",
+  "xgboost>=2.0",
+]
+sota = [
+  "peakutils>=1.3.5",
+  "py-ecg-detectors>=1.3.5",
+  "psutil>=7.0",
+  "tensorflow>=2.21",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,9 @@
+domain,evaluation,input_rr,model,feature_set,quantization,windows,records,accuracy,balanced_accuracy,precision,sensitivity,specificity,f1,roc_auc,tn,fp,fn,tp,model_bytes,working_ram_bytes,notes
+AF,AFDB_holdout,annotation,Logistic_Regression,selected,float,20194,7,0.928296,0.902214,0.951838,0.825079,0.979350,0.883937,0.983150,13232,279,1169,5514,1501,,smallest_float_candidate
+AF,AFDB_holdout,annotation,Extra_Trees,selected,float,20194,7,0.932059,0.915765,0.922514,0.867574,0.963955,0.894201,0.981661,13024,487,885,5798,1910964,,best_balanced_accuracy
+AF,AFDB_holdout,annotation,Extra_Trees,selected,int8,20194,7,0.928840,0.912906,0.914638,0.865779,0.960033,0.889538,0.979080,12971,540,897,5786,141881,13,prediction_agreement_with_float_0.994701
+AF,AFDB_firmware_RR_screen,annotation,Extra_Trees,selected,float,17525,6,0.922739,0.911999,0.924924,0.867177,0.956822,0.895120,0.978337,10393,469,885,5778,,,same_processed_records
+AF,AFDB_firmware_RR_screen,firmware_detected,Extra_Trees,selected,float,17868,6,0.862660,0.845268,0.838089,0.778670,0.911867,0.807288,0.926390,10274,993,1461,5140,,,model_not_refit
+AF,AFDB_firmware_RR_screen,annotation,Extra_Trees,selected,int8,17525,6,0.920114,0.909534,0.919764,0.865376,0.953692,0.891741,0.976150,10359,503,897,5766,141881,13,model_not_refit
+AF,AFDB_firmware_RR_screen,firmware_detected,Extra_Trees,selected,int8,17868,6,0.860197,0.843065,0.832982,0.777458,0.908671,0.804263,0.922991,10238,1029,1469,5132,141881,13,model_not_refit
+AF,AFDB_firmware_RR_delta,firmware_minus_annotation,Extra_Trees,selected,float,,,-0.060079,-0.066731,-0.086835,-0.088507,-0.044955,-0.087832,-0.051947,,,,,,,quality_loss_from_QRS_RR_errors

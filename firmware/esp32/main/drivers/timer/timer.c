@@ -51,9 +51,6 @@ void Timer_Init(void)
     ESP_ERROR_CHECK(gptimer_register_event_callbacks(adc_timer_handle, &adc_timer_cbs, NULL));
     // Enable timer
     ESP_ERROR_CHECK(gptimer_enable(adc_timer_handle));
-    ESP_LOGI(ECG_Sensor,
-             "ECG timer configured at %d Hz (resolution: %lu Hz)",
-             ECG_SAMP_FREQ, (unsigned long)actual_resolution_hz);
 }
 
 void Timer_Start(void)
@@ -65,7 +62,6 @@ void Timer_Start(void)
     ESP_ERROR_CHECK(gptimer_set_raw_count(adc_timer_handle, 0));
     ESP_ERROR_CHECK(gptimer_start(adc_timer_handle));
     adc_timer_running = true;
-    ESP_LOGI(ECG_Sensor, "ECG timer started");
 }
 
 void Timer_Stop(void)
@@ -76,5 +72,4 @@ void Timer_Stop(void)
 
     ESP_ERROR_CHECK(gptimer_stop(adc_timer_handle));
     adc_timer_running = false;
-    ESP_LOGI(ECG_Sensor, "ECG timer stopped");
 }

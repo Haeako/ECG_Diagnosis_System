@@ -1,0 +1,16 @@
+domain,scope,item,rank,value,unit,direction_or_outcome,notes
+XAI,cohort,samples,,50,count,,selected_for_error_analysis_not_accuracy_estimation
+XAI,cohort,TP,,15,count,TP,
+XAI,cohort,TN,,15,count,TN,
+XAI,cohort,FP,,10,count,FP,
+XAI,cohort,FN,,10,count,FN,
+XAI,fidelity,max_shap_additivity_error,,2.254862963013693e-13,probability,error,exact_TreeSHAP_float_model
+XAI,cohort,mean_probability,,0.4764119568828886,probability,,
+XAI,global_importance,pnn50,1,0.227,mean_abs_SHAP,AF_support_or_oppose,approx_from_report
+XAI,global_importance,sd2_ms,2,0.089,mean_abs_SHAP,AF_support_or_oppose,approx_from_report
+XAI,global_importance,median_rr_ms,3,0.070,mean_abs_SHAP,AF_support_or_oppose,approx_from_report
+XAI,global_importance,shannon_entropy,4,0.063,mean_abs_SHAP,AF_support_or_oppose,approx_from_report
+XAI,global_importance,sd1_sd2,5,0.016,mean_abs_SHAP,AF_support_or_oppose,approx_from_report
+XAI,deployment,local_inference_model,,Extra_Trees_INT8,text,,ESP32_predicts_locally
+XAI,deployment,server_explainer,,TreeSHAP_float_model,text,,must_report_float_INT8_prediction_agreement
+XAI,deployment,float_INT8_prediction_agreement,,0.9947013964543924,fraction,agreement,not_identical_predictions

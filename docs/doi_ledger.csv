@@ -1,0 +1,15 @@
+id,type,year,title,doi,used_for,verification
+P01,paper,2021,A signal quality assessment-based ECG waveform delineation method used for wearable monitoring systems,10.1007/s11517-021-02425-8,SQA and delineation framework,PubMed
+P02,paper,2015,Signal-quality indices for the electrocardiogram and photoplethysmogram: Derivation and applications to wireless monitoring,10.1109/JBHI.2014.2338351,SQI and quality gate,PubMed
+P03,paper,2020,Real-time quality assessment of long-term ECG signals recorded by wearables in free-living conditions,10.1109/TBME.2020.2969719,Wearable SQA,PubMed
+P04,paper,2017,Comparing feature-based classifiers and convolutional neural networks to detect arrhythmia from short segments of ECG,10.22489/CinC.2017.360-239,Feature baseline,CinC
+P05,paper,2004,A wavelet-based ECG delineator: Evaluation on standard databases,10.1109/TBME.2003.821031,Delineation benchmark,DOI
+P06,paper,1997,A database for evaluation of algorithms for measurement of QT and other waveform intervals in the ECG,10.1109/CIC.1997.648140,QTDB description,IEEE/PhysioNet
+P07,paper,2016,Assessing ECG signal quality indices to discriminate ECGs with artefacts from pathologically different arrhythmic ECGs,10.1088/0967-3334/37/8/1370,Rhythm-quality confounding,PubMed
+P08,paper,2021,ECGdeli — An open source ECG delineation toolbox for MATLAB,10.1016/j.softx.2020.100639,Delineation baseline,DOI
+P09,paper,2024,Systematic comparison of ECG delineation algorithm performance on smartwatch data,10.1109/ACCESS.2024.3487013,Wearable context,DOI
+P10,paper,2017,AF classification from a short single lead ECG recording: the PhysioNet/Computing in Cardiology Challenge 2017,10.22489/CinC.2017.065-469,CinC 2017 AF classification,PMC/CinC
+D01,dataset,2020,Brno University of Technology ECG Quality Database v1.0.0,10.13026/kah4-0w24,Quality-label benchmark,PhysioNet
+D02,dataset,2003,QT Database v1.0.0,10.13026/C24K53,Fiducial benchmark,PhysioNet
+D03,dataset,1999,MIT-BIH Noise Stress Test Database v1.0.0,10.13026/C2HS3T,Noise stress test,PhysioNet
+D04,dataset,2000,MIT-BIH Atrial Fibrillation Database v1.0.0,10.13026/C2MW2D,AFDB domain comparison,PhysioNet

@@ -299,6 +299,12 @@ bool wifi_init_sta(void)
     wifi_init_once();
     wifi_load_config();
 
+    if (s_ssid[0] == '\0') {
+        ESP_LOGW(TAG, "no station SSID configured; starting config AP");
+        wifi_start_config_ap();
+        return false;
+    }
+
     while (1) {
         if (wifi_try_sta()) {
             http_server_stop();

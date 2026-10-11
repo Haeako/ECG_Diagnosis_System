@@ -81,6 +81,60 @@ configuration. Do not compare methods from different generated window sets.
 python -m pytest
 ```
 
+## BPM and QRS benchmark
+
+The standalone detector benchmark compares conventional Pan–Tompkins with a
+noise-robust adaptive variant on QTDB ECG mixed with NSTDB muscle artifact. It
+reports micro precision/recall/F1, BPM MAE, host latency, real-time factor, and
+peak traced RAM:
+
+```powershell
+.\.venv\Scripts\python.exe experiments/benchmark_bpm_qrs.py `
+  --qtdb-dir data/qtdb --nstdb-dir data/nstdb `
+  --output outputs/bpm_qrs_benchmark
+```
+
+See [the benchmark protocol and measured results](docs/BPM_QRS_BENCHMARK.md).
+
+Optional cloned Fast-QRS, Pan-Tompkins++, and ecg2rr LSTM detectors can be
+included with `--external-root external`. Install their runtime dependencies
+with `pip install -e ".[sota]"`. See the
+[lightweight/SOTA comparison](docs/BPM_QRS_SOTA_BENCHMARK.md).
+
+The current Adaptive PT detector was also tested against nine algorithms used
+by `ecg-tools/benchmark-qrs-detectors`. See the
+[classic-suite comparison](docs/BPM_QRS_CLASSIC_SUITE.md).
+
+A leakage-controlled three-stage stress test covers all NSTDB noise sources,
+device faults, compound failures, four event tolerances, and 70 locked QTDB
+records. See the [noise-coverage report](docs/NOISE_COVERAGE_3STAGE_REPORT.md).
+
+## ECG quality under muscle noise
+
+The separate Python pilot evaluates input-only quality indices against actual
+R/RR errors using QTDB source-reference `.atr` annotations and NSTDB `ma`.
+It does not change the legacy denoising scorecard or ESP32 firmware.
+
+```powershell
+python experiments/download_ecg_quality_data.py
+python experiments/ecg_quality_emg.py benchmark
+python experiments/ecg_quality_emg.py sd-csv --csv path/to/full_rate_sd.csv
+```
+
+Use a new `--output` directory for each run. A failed quality calibration is
+reported explicitly, never repaired using test labels. SD mode reports SQIs
+without claiming reference accuracy or transferring QTDB thresholds to AD8232.
+See [the Vietnamese research report](docs/ECG_SIGNAL_QUALITY_REPORT.md).
+
+Before exporting a learned quality gate, run the grouped feasibility check. It
+keeps a rejected model host-only and never writes it into the firmware tree:
+
+```powershell
+python experiments/quality_gate_feasibility.py `
+  --windows outputs/ecg_quality_gate_v2/windows.csv `
+  --output outputs/ecg_quality_gate_v2/deployment
+```
+
 ## Firmware
 
 The ESP-IDF project is under `firmware/esp32`:
