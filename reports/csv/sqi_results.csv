@@ -9,3 +9,5 @@ SQI,quality_gate_feasibility_v1,ExtraTrees_14SQI,development_OOF,10498,,,,0.7686
 SQI,quality_gate_feasibility_v1,ExtraTrees_14SQI,held_out_test,6720,0.811687,,,0.768611,1163,0.173065,0.196905,0.050000,false,firmware_export_rejected
 SQI,ecg_quality_emg_v1,strict_rule_gate,development,10500,,,,,0,0.000000,,0.050000,false,no_feasible_threshold
 SQI,ecg_quality_emg_v1,strict_rule_gate,test,6720,,,,,0,0.000000,,0.050000,false,no_feasible_threshold
+SQI,clifford_rahman_sqi_v1,Adaptive_SVM_7SQI,development_grouped_OOF,10500,0.817701,0.795708,0.784430,0.963465,,0.000000,0.050000,0.050000,false,threshold_selected_on_development
+SQI,clifford_rahman_sqi_v1,Adaptive_SVM_7SQI,held_out_test,6720,0.855400,0.800805,0.800992,0.963465,0,0.000000,,0.050000,false,zero_coverage_at_locked_threshold

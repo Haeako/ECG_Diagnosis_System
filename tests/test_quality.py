@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from ecg_benchmark.quality import (
-    decide, evaluate_peaks, evaluation_starts, input_quality, mix_noise,
+    clifford_rahman_statistical_sqi, decide, evaluate_peaks, evaluation_starts, input_quality, mix_noise,
     noise_partitions, ordered_matches, read_sd_segments, resample_noise,
     select_threshold, split_groups,
 )
@@ -89,6 +89,21 @@ def synthetic_ecg(inverted=False):
     return -x if inverted else x
 
 
+def test_clifford_rahman_sqi_formulas_and_invalid_inputs():
+    fs = 250
+    t = np.arange(10 * fs) / fs
+    x = np.sin(2 * np.pi * 10 * t)
+    sqi = clifford_rahman_statistical_sqi(x, fs)
+    assert sqi["clifford_p_sqi"] > .99
+    assert sqi["clifford_bas_sqi"] > .99
+    assert sqi["clifford_s_sqi"] == pytest.approx(0, abs=1e-12)
+    assert sqi["clifford_k_sqi"] == pytest.approx(1.5, rel=1e-3)
+    assert sqi["rahman_hos_sqi"] == pytest.approx(0, abs=1e-12)
+    assert sqi["rahman_snr_sqi"] > 1
+    assert all(v is None for v in clifford_rahman_statistical_sqi(np.zeros(100), fs).values())
+    assert all(v is None for v in clifford_rahman_statistical_sqi(x, 80).values())
+
+
 def test_polarity_and_core_cropping():
     a, p, _ = input_quality(synthetic_ecg(), 250, slice(500, 3000))
     b, q, _ = input_quality(synthetic_ecg(True), 250, slice(500, 3000))
@@ -98,7 +113,10 @@ def test_polarity_and_core_cropping():
     assert a["input_reason"] == b["input_reason"] == "ok"
     for name in ("baseline_power_ratio", "spectral_entropy", "signal_kurtosis",
                  "beat_count_disagreement", "peak_timing_disagreement_ms",
-                 "qrs_template_correlation", "qrs_amplitude_cv", "rr_outlier_fraction"):
+                 "qrs_template_correlation", "qrs_amplitude_cv", "rr_outlier_fraction",
+                 "clifford_b_sqi", "clifford_p_sqi", "clifford_k_sqi",
+                 "clifford_s_sqi", "clifford_bas_sqi", "rahman_hos_sqi",
+                 "rahman_snr_sqi"):
         assert a[name] is not None
         assert np.isfinite(a[name])
 

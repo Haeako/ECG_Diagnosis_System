@@ -20,6 +20,59 @@ PROTOCOL = "ecg-quality-emg-v1"
 BEAT_SYMBOLS = frozenset("NLRBAaJSVrFejE/fQ?n")
 
 
+def clifford_rahman_statistical_sqi(ecg: np.ndarray, fs: float) -> dict[str, float | None]:
+    """Compute low-cost ECG SQIs used by Clifford (2012)/Rahman (2022).
+
+    The returned values are *indices*, not quality probabilities.  In
+    particular, Rahman et al. showed that fixed thresholds for these indices
+    do not transfer reliably between datasets.  ``sqi_snr`` follows their
+    equation (variance of x divided by variance of abs(x)); it is a linear
+    ratio despite the historical name and must not be labelled dB.
+
+    ``clifford_bas_sqi`` is the fraction of 0--40 Hz power outside the
+    baseline band (0--1 Hz).  ``clifford_p_sqi``/``rahman_p_sqi`` is the
+    relative QRS-band power, 5--15 Hz divided by 0--45 Hz power.
+    """
+    x = np.asarray(ecg, dtype=float)
+    names = (
+        "clifford_p_sqi", "clifford_k_sqi", "clifford_s_sqi",
+        "clifford_bas_sqi", "rahman_hos_sqi", "rahman_snr_sqi",
+    )
+    empty = {name: None for name in names}
+    if (x.ndim != 1 or len(x) < 4 or not np.all(np.isfinite(x))
+            or not np.isfinite(fs) or fs <= 90):
+        return empty
+    centered = x - np.mean(x)
+    sigma = float(np.sqrt(np.mean(centered ** 2)))
+    if sigma <= np.finfo(float).eps:
+        return empty
+    standardized = centered / sigma
+    skewness = float(np.mean(standardized ** 3))
+    kurtosis = float(np.mean(standardized ** 4))  # Pearson, as in the papers.
+    frequencies, power = signal.welch(
+        centered, fs=fs, nperseg=min(len(centered), max(16, round(2 * fs)))
+    )
+
+    def band_power(lo: float, hi: float) -> float:
+        mask = (frequencies >= lo) & (frequencies <= hi)
+        return float(trapezoid(power[mask], frequencies[mask])) if np.count_nonzero(mask) >= 2 else 0.0
+
+    total_45 = band_power(0, 45)
+    total_40 = band_power(0, 40)
+    p_sqi = band_power(5, 15) / total_45 if total_45 > 0 else None
+    bas_sqi = 1.0 - band_power(0, 1) / total_40 if total_40 > 0 else None
+    abs_variance = float(np.var(np.abs(centered)))
+    snr_sqi = float(np.var(centered) / abs_variance) if abs_variance > np.finfo(float).eps else None
+    return {
+        "clifford_p_sqi": p_sqi,
+        "clifford_k_sqi": kurtosis,
+        "clifford_s_sqi": skewness,
+        "clifford_bas_sqi": bas_sqi,
+        "rahman_hos_sqi": abs(skewness) * kurtosis / 5.0,
+        "rahman_snr_sqi": snr_sqi,
+    }
+
+
 def peak_indices(values: np.ndarray) -> np.ndarray:
     values = np.asarray(values)
     if values.ndim != 1 or not np.all(np.isfinite(values)):
@@ -149,6 +202,10 @@ def input_quality(ecg: np.ndarray, fs: float, core: slice) -> tuple[dict, np.nda
         "spectral_entropy": None, "beat_count_disagreement": None,
         "peak_timing_disagreement_ms": None, "qrs_template_correlation": None,
         "qrs_amplitude_cv": None, "rr_outlier_fraction": None,
+        "clifford_b_sqi": None, "clifford_p_sqi": None,
+        "clifford_k_sqi": None, "clifford_s_sqi": None,
+        "clifford_bas_sqi": None, "rahman_hos_sqi": None,
+        "rahman_snr_sqi": None,
         "detected_beat_count": 0, "xqrs_beat_count": 0, "input_reason": "ok",
     }
     if fs <= 80 or not np.isfinite(fs):
@@ -166,6 +223,7 @@ def input_quality(ecg: np.ndarray, fs: float, core: slice) -> tuple[dict, np.nda
     if rms <= np.finfo(float).eps:
         result["input_reason"] = "constant_signal"
         return result, empty, empty
+    result.update(clifford_rahman_statistical_sqi(middle, fs))
     frequencies, power = signal.welch(middle, fs=fs, nperseg=min(len(middle), round(2*fs)))
     def band(lo, hi):
         mask = (frequencies >= lo) & (frequencies <= hi)
@@ -195,6 +253,7 @@ def input_quality(ecg: np.ndarray, fs: float, core: slice) -> tuple[dict, np.nda
     primary_matches, secondary_matches = ordered_matches(primary, secondary, round(0.05 * fs))
     total = len(primary) + len(secondary)
     result["agreement"] = 2 * len(primary_matches) / total if total else None
+    result["clifford_b_sqi"] = result["agreement"]
     result["beat_count_disagreement"] = abs(len(primary) - len(secondary)) / max(len(primary), len(secondary), 1)
     if len(primary_matches):
         result["peak_timing_disagreement_ms"] = float(
