@@ -114,3 +114,12 @@ reports/TONG_BAO_CAO_TIEN_DO_ECG.tex
 .vscode/settings.json
 Integrated_PCB/*
 A_signal_quality_assessment–ba.pdf
+firmware/esp32/benchmark_results/*
+
+firmware/esp32/build_cost/*
+external/challenge-2011/*
+firmware/esp32/build_benchmark_xqrs/*
+firmware/esp32/build_cost_bsqi/*
+firmware/esp32/build_cost_bsqi_xqrs_ninja/*
+firmware/esp32/build_cost_clean_baseline/*
+firmware/esp32/build_cost_bsqi_xqrs/*

@@ -25,6 +25,12 @@ bool sd_spi_is_mounted(void);
 esp_err_t sd_spi_write(const char *filename, const void *data, size_t len);
 
 /**
+ * Thử ghi dữ liệu nhưng không phát log lỗi. Dùng cho file tùy chọn có cơ chế
+ * fallback riêng; lỗi vẫn được trả về cho caller xử lý.
+ */
+esp_err_t sd_spi_try_write(const char *filename, const void *data, size_t len);
+
+/**
  * Đóng file SD
  */
 void sd_spi_close(void);

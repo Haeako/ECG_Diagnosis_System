@@ -22,6 +22,27 @@ typedef struct {
     uint16_t rr_interval_ms;
     uint16_t instant_bpm;
     uint16_t bpm;
+    /* 0..100; 255 means the 10-second SQI window is not ready. */
+    uint8_t sqi_score;
+    uint8_t sqi_status;
+    /* Orphanidou shadow telemetry; it does not gate the ECG/AF path. */
+    uint8_t sqi_rule_mask;
+    uint16_t sqi_heart_rate_bpm;
+    uint16_t sqi_max_rr_ms;
+    uint16_t sqi_rr_ratio_x1000;
+    int16_t sqi_template_correlation_x1000;
+    uint32_t sqi_window_id;
+    uint32_t sqi_finalize_us;
+    /* On-device AF screening telemetry from the frozen INT8 Extra Trees model. */
+    uint16_t af_probability_x10000;
+    uint16_t af_score;
+    uint16_t af_event_id;
+    uint32_t af_window_id;
+    uint8_t af_valid;
+    uint8_t af_raw_prediction;
+    uint8_t af_confirmed;
+    uint8_t af_new_window;
+    uint8_t af_new_event;
 } ecg_record_t;
 
 #include <math.h>

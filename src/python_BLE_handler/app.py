@@ -40,7 +40,7 @@ VALID_COMMANDS = {"start", "stop"}
 #   H  uint16_t bpm
 #   H  uint16_t rr_interval_ms
 #   B  uint8_t  is_peak
-#   B  uint8_t  reserved
+#   B  uint8_t  SQI score (0..100, 255 = insufficient data)
 PACKET_FMT = "<IhhHHHBB"
 PACKET_SIZE = struct.calcsize(PACKET_FMT)  # = 16 bytes
 
@@ -54,6 +54,7 @@ class EcgSample:
     bpm: int
     rr_interval_ms: int
     is_peak: bool
+    sqi_score: int
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "EcgSample":
@@ -63,8 +64,8 @@ class EcgSample:
                 f"can {PACKET_SIZE} byte"
             )
         (ts, filtered, corrected, raw_adc, bpm,
-         rr, is_peak, _reserved) = struct.unpack(PACKET_FMT, data)
-        return cls(ts, filtered, corrected, raw_adc, bpm, rr, bool(is_peak))
+         rr, is_peak, sqi_score) = struct.unpack(PACKET_FMT, data)
+        return cls(ts, filtered, corrected, raw_adc, bpm, rr, bool(is_peak), sqi_score)
 
 
 class EcgBleClient:
@@ -82,7 +83,7 @@ class EcgBleClient:
             self.csv_writer = csv.writer(self.csv_file)
             self.csv_writer.writerow(
                 ["recv_time", "timestamp_ms", "filtered", "corrected",
-                 "raw_adc", "bpm", "rr_interval_ms", "is_peak"]
+                 "raw_adc", "bpm", "rr_interval_ms", "is_peak", "sqi_score"]
             )
 
     async def discover(self) -> str:
@@ -109,13 +110,14 @@ class EcgBleClient:
         marker = " <-- R-PEAK" if sample.is_peak else ""
         print(f"t={sample.timestamp_ms:>10} ms  filtered={sample.filtered:>6} "
               f"corrected={sample.corrected:>6}  raw_adc={sample.raw_adc:>5}  "
-              f"bpm={sample.bpm:>3}  rr={sample.rr_interval_ms:>5} ms{marker}")
+              f"bpm={sample.bpm:>3}  rr={sample.rr_interval_ms:>5} ms  "
+              f"sqi={sample.sqi_score:>3}{marker}")
 
         if self.csv_writer:
             self.csv_writer.writerow([
                 time.time(), sample.timestamp_ms, sample.filtered,
                 sample.corrected, sample.raw_adc, sample.bpm,
-                sample.rr_interval_ms, int(sample.is_peak),
+                sample.rr_interval_ms, int(sample.is_peak), sample.sqi_score,
             ])
             self.csv_file.flush()
 

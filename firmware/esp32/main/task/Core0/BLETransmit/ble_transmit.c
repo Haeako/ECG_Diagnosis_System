@@ -8,8 +8,8 @@
 
 #include "components/esp_ble/ecg_ble.h"
 
-#define BLE_TX_QUEUE_LENGTH       8U
-#define BLE_TX_NOTIFY_INTERVAL_MS 40U
+#define BLE_TX_QUEUE_LENGTH       32U
+#define BLE_TX_NOTIFY_INTERVAL_MS 10U
 #define BLE_TX_TASK_STACK_SIZE    3072U
 #define BLE_TX_TASK_PRIORITY      4U
 #define BLE_TX_CORE               0
