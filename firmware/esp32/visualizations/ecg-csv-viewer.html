@@ -1,0 +1,169 @@
+<div id="ecg-csv-viewer">
+  <h2>ECG CSV viewer</h2>
+  <div class="viz-controls">
+    <label class="form-label">CSV record
+      <input id="ecg-file" class="form-control" type="file" accept=".csv,text/csv">
+    </label>
+    <label class="form-label">Signal
+      <select id="ecg-signal" class="form-select">
+        <option value="raw_adc">Raw ADC</option>
+        <option value="centered">Centered</option>
+        <option value="notch_49_51hz">Notch 49–51 Hz</option>
+        <option value="bandpass_5_18hz" selected>Bandpass 5–18 Hz</option>
+        <option value="ma_qrs_100ms">QRS moving average</option>
+      </select>
+    </label>
+  </div>
+  <div id="ecg-window-wrap" hidden>
+    <div class="viz-row">
+      <label class="form-label" style="flex:1">Window start: <span id="ecg-window-label" class="tabular-nums"></span>
+        <input id="ecg-window" class="form-range" type="range" min="0" max="0" value="0" step="1">
+      </label>
+    </div>
+    <div class="viz-row text-small" aria-live="polite">
+      <span><strong id="ecg-filename"></strong></span>
+      <span id="ecg-summary" class="text-muted"></span>
+    </div>
+    <svg id="ecg-chart" role="img" aria-labelledby="ecg-title ecg-desc">
+      <title id="ecg-title">ECG waveform</title>
+      <desc id="ecg-desc">Ten-second ECG signal window. Circles mark detected R peaks; the lower strip shows SQI status.</desc>
+    </svg>
+    <div class="viz-row text-small">
+      <span><span class="ecg-key ecg-peak"></span> R peak</span>
+      <span><span class="ecg-key ecg-good"></span> SQI good</span>
+      <span><span class="ecg-key ecg-bad"></span> SQI bad</span>
+      <span><span class="ecg-key ecg-unknown"></span> SQI insufficient</span>
+    </div>
+  </div>
+  <p id="ecg-empty" class="text-muted">Chọn một file CSV trong <code>data\record</code>. File được đọc cục bộ và không được tải lên mạng.</p>
+  <p id="ecg-error" class="text-destructive" role="alert" hidden></p>
+</div>
+
+<style>
+#ecg-csv-viewer { width:100%; }
+#ecg-csv-viewer .viz-controls { align-items:end; }
+#ecg-csv-viewer .viz-controls > label { min-width:220px; flex:1; }
+#ecg-chart { width:100%; height:auto; margin-top:12px; overflow:visible; }
+#ecg-chart .grid { stroke:var(--border); stroke-width:1; }
+#ecg-chart .wave { fill:none; stroke:var(--viz-series-1); stroke-width:1.5; vector-effect:non-scaling-stroke; }
+#ecg-chart .peak-mark { fill:var(--viz-series-2); stroke:none; }
+#ecg-chart .sqi-good { fill:var(--green); opacity:.7; }
+#ecg-chart .sqi-bad { fill:var(--red); opacity:.7; }
+#ecg-chart .sqi-unknown { fill:var(--yellow); opacity:.7; }
+#ecg-chart text { fill:var(--foreground); font-size:12px; }
+#ecg-chart .axis-label { fill:var(--muted-foreground); }
+#ecg-csv-viewer .ecg-key { display:inline-block; width:12px; height:4px; margin-right:5px; vertical-align:middle; }
+#ecg-csv-viewer .ecg-peak { background:var(--viz-series-2); border-radius:50%; height:8px; width:8px; }
+#ecg-csv-viewer .ecg-good { background:var(--green); }
+#ecg-csv-viewer .ecg-bad { background:var(--red); }
+#ecg-csv-viewer .ecg-unknown { background:var(--yellow); }
+</style>
+
+<script>
+(() => {
+  const root = document.getElementById('ecg-csv-viewer');
+  const fileInput = root.querySelector('#ecg-file');
+  const signalSelect = root.querySelector('#ecg-signal');
+  const slider = root.querySelector('#ecg-window');
+  const chart = root.querySelector('#ecg-chart');
+  const wrap = root.querySelector('#ecg-window-wrap');
+  const empty = root.querySelector('#ecg-empty');
+  const error = root.querySelector('#ecg-error');
+  let rows = [];
+  let filename = '';
+  const windowMs = 10000;
+
+  function parseCsv(text) {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) throw new Error('CSV không có dữ liệu.');
+    const headers = lines[0].split(',').map(x => x.trim());
+    const required = ['timestamp_ms', 'is_r_peak', 'sqi_status'];
+    for (const key of required) if (!headers.includes(key)) throw new Error(`Thiếu cột ${key}.`);
+    const numeric = new Set(headers);
+    return lines.slice(1).map(line => {
+      const values = line.split(',');
+      const row = {};
+      headers.forEach((h, i) => row[h] = numeric.has(h) ? Number(values[i]) : values[i]);
+      return row;
+    }).filter(r => Number.isFinite(r.timestamp_ms));
+  }
+
+  function draw() {
+    if (!rows.length) return;
+    const key = signalSelect.value;
+    const startIndex = Number(slider.value);
+    const startMs = rows[startIndex].timestamp_ms;
+    const endMs = startMs + windowMs;
+    const visible = [];
+    for (let i = startIndex; i < rows.length && rows[i].timestamp_ms <= endMs; i++) {
+      if (Number.isFinite(rows[i][key])) visible.push(rows[i]);
+    }
+    if (!visible.length) return;
+    const width = Math.max(320, Math.round(chart.getBoundingClientRect().width || 700));
+    const height = Math.max(260, Math.round(width * 0.42));
+    const pad = {l:64, r:18, t:20, b:48};
+    const plotW = width - pad.l - pad.r;
+    const plotH = height - pad.t - pad.b;
+    let lo = Math.min(...visible.map(r => r[key]));
+    let hi = Math.max(...visible.map(r => r[key]));
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const margin = (hi - lo) * .08;
+    lo -= margin; hi += margin;
+    const x = t => pad.l + ((t - startMs) / windowMs) * plotW;
+    const y = v => pad.t + ((hi - v) / (hi - lo)) * plotH;
+    const maxPoints = Math.max(400, Math.floor(plotW * 2));
+    const stride = Math.max(1, Math.ceil(visible.length / maxPoints));
+    const sampled = visible.filter((_, i) => i % stride === 0 || i === visible.length - 1);
+    const path = sampled.map((r, i) => `${i ? 'L' : 'M'}${x(r.timestamp_ms).toFixed(1)},${y(r[key]).toFixed(1)}`).join(' ');
+    const yTicks = Array.from({length:5}, (_, i) => lo + (hi-lo)*i/4);
+    const xTicks = Array.from({length:6}, (_, i) => startMs + windowMs*i/5);
+    const sqiRuns = [];
+    let runStart = visible[0];
+    for (let i=1; i<=visible.length; i++) {
+      if (i === visible.length || visible[i].sqi_status !== runStart.sqi_status) {
+        sqiRuns.push({start:runStart.timestamp_ms, end:i === visible.length ? endMs : visible[i].timestamp_ms, status:runStart.sqi_status});
+        runStart = visible[i];
+      }
+    }
+    chart.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    chart.innerHTML = `
+      <title>ECG waveform: ${filename}</title>
+      <desc>Ten-second ${key} window with R peaks and SQI status.</desc>
+      ${yTicks.map(v => `<line class="grid" x1="${pad.l}" x2="${width-pad.r}" y1="${y(v)}" y2="${y(v)}"/><text x="${pad.l-8}" y="${y(v)+4}" text-anchor="end">${Math.round(v)}</text>`).join('')}
+      ${xTicks.map(t => `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${pad.t}" y2="${pad.t+plotH}"/><text x="${x(t)}" y="${height-12}" text-anchor="middle">${((t-startMs)/1000).toFixed(0)} s</text>`).join('')}
+      <path class="wave" d="${path}"/>
+      ${visible.filter(r => r.is_r_peak === 1).map(r => `<circle class="peak-mark" cx="${x(r.timestamp_ms)}" cy="${y(r[key])}" r="4"><title>R peak · ${(r.timestamp_ms-startMs)/1000}s · BPM ${r.bpm || 0}</title></circle>`).join('')}
+      ${sqiRuns.map(r => `<rect class="${r.status === 1 ? 'sqi-good' : r.status === 0 ? 'sqi-bad' : 'sqi-unknown'}" x="${x(r.start)}" y="${pad.t+plotH+8}" width="${Math.max(1,x(r.end)-x(r.start))}" height="8"><title>SQI ${r.status === 1 ? 'good' : r.status === 0 ? 'bad' : 'insufficient'}</title></rect>`).join('')}
+      <text class="axis-label" transform="translate(14 ${pad.t+plotH/2}) rotate(-90)" text-anchor="middle">${key}</text>`;
+    const peaks = visible.filter(r => r.is_r_peak === 1).length;
+    const good = visible.filter(r => r.sqi_status === 1).length;
+    const bad = visible.filter(r => r.sqi_status === 0).length;
+    const insufficient = visible.filter(r => r.sqi_status === 2).length;
+    root.querySelector('#ecg-window-label').textContent = `${(startMs/1000).toFixed(3)} s`;
+    root.querySelector('#ecg-summary').textContent = `${rows.length.toLocaleString()} mẫu · cửa sổ ${visible.length.toLocaleString()} mẫu · ${peaks} R-peak · ${(good/visible.length*100).toFixed(1)}% good · ${(bad/visible.length*100).toFixed(1)}% bad · ${(insufficient/visible.length*100).toFixed(1)}% insufficient`;
+  }
+
+  fileInput.addEventListener('change', async () => {
+    error.hidden = true;
+    try {
+      const file = fileInput.files[0];
+      if (!file) return;
+      filename = file.name;
+      rows = parseCsv(await file.text());
+      if (!rows.length) throw new Error('Không đọc được hàng dữ liệu hợp lệ.');
+      slider.max = String(Math.max(0, rows.length - 1));
+      slider.value = '0';
+      root.querySelector('#ecg-filename').textContent = filename;
+      wrap.hidden = false;
+      empty.hidden = true;
+      draw();
+    } catch (e) {
+      error.textContent = e.message || String(e);
+      error.hidden = false;
+    }
+  });
+  signalSelect.addEventListener('change', draw);
+  slider.addEventListener('input', draw);
+  new ResizeObserver(draw).observe(root);
+})();
+</script>

@@ -17,6 +17,7 @@
 #include "components/esp_ble/ecg_ble.h"
 #include "components/af_model/af_runtime.h"
 #include "components/os/semaphore.h"
+#include "components/metrics/pipeline_metrics.h"
 #include "components/ring_buffer/ring_buffer.h"
 #ifndef SQI_COST_DISABLE
 #include "components/sqi_gate/sqi_runtime.h"
@@ -35,6 +36,7 @@
 #define SD_TASK_CORE            0
 #define ECG_PROCESSING_CORE     1
 #define SD_RINGBUFFER_DROP_LIMIT 32
+#define SD_DRAIN_TIMEOUT_MS      3000U
 #define RPEAK_ALIGN_DELAY_MS    1000U
 #define RPEAK_PENDING_SAMPLES   512U
 
@@ -47,6 +49,7 @@ adc_oneshot_unit_handle_t adc_handle = NULL;
 gptimer_handle_t adc_timer_handle = NULL;
 
 static SemaphoreHandle_t sd_access_mutex = NULL;
+static SemaphoreHandle_t sd_drained_semaphore = NULL;
 static char     ecg_sd_file[ECG_SD_FILE_MAX_LEN];
 static char     ecg_event_file[ECG_SD_FILE_MAX_LEN];
 static uint32_t ecg_record_start_ms     = 0;
@@ -59,8 +62,7 @@ static char         sd_batch[SD_BATCH_BYTES];
 static ecg_record_t rpeak_pending[RPEAK_PENDING_SAMPLES];
 
 static volatile bool record_active = false;
-static MODE pipeline_mode = FAULT_MODE;
-
+static volatile bool sd_stop_requested = false;
 static TaskHandle_t sd_task_handle = NULL;
 static TaskHandle_t ecg_task_handle = NULL;
 static ecg_pipeline_event_cb_t pipeline_event_cb = NULL;
@@ -149,6 +151,10 @@ esp_err_t ecg_pipeline_start_recording(void)
     esp_err_t ret;
 
     ADC_Init();
+    sd_stop_requested = false;
+    if (sd_drained_semaphore != NULL) {
+        (void)xSemaphoreTake(sd_drained_semaphore, 0);
+    }
 
     xSemaphoreTake(sd_access_mutex, portMAX_DELAY);
     ret = sd_spi_init();
@@ -220,52 +226,37 @@ esp_err_t ecg_pipeline_start_recording(void)
 #ifndef SQI_COST_DISABLE
     sqi_runtime_reset(now_ms);
 #endif
+    pipeline_metrics_start_session();
     record_active = true;
     Timer_Start();
     return ESP_OK;
 }
 
-void ecg_pipeline_stop_record(void)
+esp_err_t ecg_pipeline_stop_record(void)
 {
+    bool was_recording = record_active;
     record_active = false;
     Timer_Stop();
     ADC_Deinit();
+
+    if (was_recording && sd_task_handle != NULL) {
+        sd_stop_requested = true;
+        if (xSemaphoreTake(sd_drained_semaphore,
+                           pdMS_TO_TICKS(SD_DRAIN_TIMEOUT_MS)) != pdTRUE) {
+            ESP_LOGE(TAG_ECG, "Timed out draining SD writer");
+            ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
+                                     ESP_ERR_TIMEOUT,
+                                     "sd-drain-timeout");
+            return ESP_ERR_TIMEOUT;
+        }
+    }
 
     if (sd_access_mutex != NULL) {
         xSemaphoreTake(sd_access_mutex, portMAX_DELAY);
         sd_spi_close();
         xSemaphoreGive(sd_access_mutex);
     }
-
-}
-
-esp_err_t ecg_pipeline_apply_mode(MODE mode)
-{
-    if (mode == pipeline_mode) {
-        return ESP_OK;
-    }
-
-    switch (mode) {
-    case PREPARE_MODE:
-    case IDLE_MODE:
-    case FAULT_MODE:
-        ecg_pipeline_stop_record();
-        break;
-
-    case RECORD_MODE: {
-        esp_err_t ret = ecg_pipeline_start_recording();
-        if (ret != ESP_OK) {
-            return ret;
-        }
-        break;
-    }
-
-    default:
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    pipeline_mode = mode;
-    ESP_LOGI(TAG_ECG, "Pipeline mode=%d", mode);
+    pipeline_metrics_stop_session();
     return ESP_OK;
 }
 
@@ -335,6 +326,7 @@ static void ecg_processing_task(void *pvParameters)
     uint32_t ringbuffer_drop_count = 0;
     uint32_t heartbeat_start_ms = 0U;
     uint32_t heartbeat_samples = 0U;
+    uint32_t heartbeat_record_start_ms = 0U;
 
     while (1) {
         if (xSemaphoreTake(adc_timer_semaphore_handle, portMAX_DELAY) != pdTRUE) {
@@ -343,6 +335,16 @@ static void ecg_processing_task(void *pvParameters)
 
         if (!record_active) {
             continue;
+        }
+        uint64_t pipeline_start_us = (uint64_t)esp_timer_get_time();
+        pipeline_metrics_sample_begin(pipeline_start_us,
+                                      pipeline_metrics_last_isr_us());
+
+        if (heartbeat_record_start_ms != ecg_record_start_ms) {
+            heartbeat_record_start_ms = ecg_record_start_ms;
+            heartbeat_start_ms = 0U;
+            heartbeat_samples = 0U;
+            ringbuffer_drop_count = 0U;
         }
 
         esp_err_t adc_ret = adc_oneshot_read(adc_handle, ADC_Channel, &raw);
@@ -389,6 +391,7 @@ static void ecg_processing_task(void *pvParameters)
         ble_transmit_enqueue(&sample);
 
         if (xRingbufferSend(sd_buf_handle, &sample, sizeof(sample), 0) != pdTRUE) {
+            pipeline_metrics_sd_drop();
             ringbuffer_drop_count++;
             ESP_LOGW(TAG_ECG, "SD ring buffer full, sample dropped");
             if (ringbuffer_drop_count >= SD_RINGBUFFER_DROP_LIMIT) {
@@ -400,6 +403,10 @@ static void ecg_processing_task(void *pvParameters)
         } else {
             ringbuffer_drop_count = 0;
         }
+        size_t sd_free = xRingbufferGetCurFreeSize(sd_buf_handle);
+        pipeline_metrics_sd_queue(2U * 16384U - sd_free, 2U * 16384U);
+        pipeline_metrics_sample_end((uint32_t)
+            ((uint64_t)esp_timer_get_time() - pipeline_start_us));
 
         if (heartbeat_start_ms == 0U) {
             heartbeat_start_ms = sample.timestamp_ms;
@@ -591,11 +598,19 @@ static void sd_write_task(void *pvParameters)
                     ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
                                              ESP_FAIL,
                                              "sd-segment-header-write-failed");
-                } else if (sd_spi_write(ecg_sd_file, sd_batch, batch_len) != ESP_OK) {
+                } else {
+                    int64_t write_start_us = esp_timer_get_time();
+                    esp_err_t write_status =
+                        sd_spi_write(ecg_sd_file, sd_batch, batch_len);
+                    pipeline_metrics_sd_write(
+                        (uint32_t)(esp_timer_get_time() - write_start_us),
+                        batch_len, write_status == ESP_OK);
+                    if (write_status != ESP_OK) {
                     ESP_LOGW(TAG_ECG, "SD write failed");
                     ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
                                              ESP_FAIL,
                                              "sd-write-failed");
+                    }
                 }
                 if (event_batch_len > 0U && ecg_event_file[0] != '\0'
                     && sd_spi_write(ecg_event_file, event_batch,
@@ -608,11 +623,19 @@ static void sd_write_task(void *pvParameters)
             }
             xSemaphoreGive(sd_access_mutex);
         }
+
+        /* Acknowledge STOP only after one complete pass observes no queued
+         * sample and all delayed R-peak alignment records have been flushed. */
+        if (sd_stop_requested && !received_sample && pending_count == 0U) {
+            sd_stop_requested = false;
+            xSemaphoreGive(sd_drained_semaphore);
+        }
     }
 }
 
 esp_err_t ecg_pipeline_init(void)
 {
+    pipeline_metrics_init();
     Semaphore_Init(&adc_timer_semaphore_handle);
     if (adc_timer_semaphore_handle == NULL) {
         ESP_LOGE(TAG_ECG, "ADC timer semaphore allocation failed");
@@ -626,6 +649,11 @@ esp_err_t ecg_pipeline_init(void)
         ESP_LOGE(TAG_ECG, "SD mutex allocation failed");
         return ESP_ERR_NO_MEM;
     }
+    sd_drained_semaphore = xSemaphoreCreateBinary();
+    if (sd_drained_semaphore == NULL) {
+        ESP_LOGE(TAG_ECG, "SD drain semaphore allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
     ecg_signal_init(ecg_now_ms());
     af_runtime_reset();
 #ifndef SQI_COST_DISABLE
@@ -635,7 +663,7 @@ esp_err_t ecg_pipeline_init(void)
     return ESP_OK;
 }
 
-void ecg_pipeline_start_task(void)
+esp_err_t ecg_pipeline_start_tasks(void)
 {
     if (xTaskCreatePinnedToCore(sd_write_task, "SD_Task", SD_TASK_STACK_SIZE, NULL, 4,
                                 &sd_task_handle, SD_TASK_CORE) != pdPASS) {
@@ -643,14 +671,16 @@ void ecg_pipeline_start_task(void)
         ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_TASK_FAULT,
                                  ESP_ERR_NO_MEM,
                                  "sd-task-create-failed");
-        return;
+        return ESP_ERR_NO_MEM;
     }
+    pipeline_metrics_register_task(METRICS_TASK_SD, sd_task_handle);
     if (xTaskCreatePinnedToCore(ecg_processing_task, "ECG_Task", 4096, NULL, 5,
                                 &ecg_task_handle, ECG_PROCESSING_CORE) != pdPASS) {
         ESP_LOGE(TAG_ECG, "ECG task creation failed");
         ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_TASK_FAULT, ESP_ERR_NO_MEM, "ecg-process-task-create-failed");
-        return;
+        return ESP_ERR_NO_MEM;
     }
+    pipeline_metrics_register_task(METRICS_TASK_ECG, ecg_task_handle);
     esp_err_t ble_status = ecg_ble_init();
     if (ble_status == ESP_OK) {
         ble_status = ble_transmit_start();
@@ -659,5 +689,6 @@ void ecg_pipeline_start_task(void)
         ESP_LOGE(TAG_ECG, "BLE stage 1 failed (%s); SD pipeline remains active", esp_err_to_name(ble_status));
         ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_BLE_FAULT, ble_status, "ble-init-failed");
     }
+    return ESP_OK;
 }
  

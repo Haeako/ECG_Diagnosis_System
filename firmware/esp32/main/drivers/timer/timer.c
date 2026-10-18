@@ -1,5 +1,6 @@
 #include "timer.h"
 #include "../../components/os/semaphore.h"
+#include "../../components/metrics/pipeline_metrics.h"
 
 extern char *ECG_Sensor;
 extern SemaphoreHandle_t adc_timer_semaphore_handle;
@@ -10,7 +11,9 @@ static bool adc_timer_running = false;
 bool IRAM_ATTR Reading_ECG_Sensor(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_ctx)
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(adc_timer_semaphore_handle, &xHigherPriorityTaskWoken);
+    BaseType_t sent = xSemaphoreGiveFromISR(adc_timer_semaphore_handle,
+                                            &xHigherPriorityTaskWoken);
+    pipeline_metrics_timer_isr(edata->count_value, sent == pdTRUE);
     return (xHigherPriorityTaskWoken == pdTRUE);
 }
 

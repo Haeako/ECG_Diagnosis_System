@@ -32,6 +32,15 @@ machine, SD writer, NimBLE host, and BLE transmitter; Core 1 runs the 360 Hz
 ADC/filter/BPM/SQI processing task. `main/main.c` is only the bootstrap entry;
 the control implementation lives in `task/Core0/StateMachine/StateMachine.c`.
 
+The state machine is the sole owner of application mode. GPIO, BLE, pipeline,
+and health-check producers post facts through `state_machine_post_event()`;
+they cannot request a target mode. The supervisor validates each event against
+the current mode and applies the resulting transition. Pipeline workers are
+created once and block on their FreeRTOS queue/semaphore while idle. On STOP,
+acquisition is halted first and the SD worker drains its queued and delayed
+R-peak records before acknowledging shutdown; only then is the card unmounted
+and the supervisor publishes IDLE.
+
 Build with a configured ESP-IDF environment:
 
 ```bash

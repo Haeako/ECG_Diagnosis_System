@@ -1,4 +1,6 @@
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "task/Core0/StateMachine/StateMachine.h"
 #ifdef SQI_BENCHMARK_ENABLE
@@ -22,4 +24,9 @@ void app_main(void)
     if (state_machine_start() != ESP_OK) {
         ESP_LOGE(TAG, "Application startup failed");
     }
+#if CONFIG_ECG_PROFILE_AUTOSTART
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ESP_LOGW(TAG, "Profiling autostart enabled");
+    (void)state_machine_post_event(SM_BLE_START_CMD_EVENT, ESP_OK);
+#endif
 }

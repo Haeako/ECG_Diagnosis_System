@@ -147,12 +147,18 @@ static bool pan_accept_block(void)
     return true;
 }
 
-static bool qrs_detector_push(int16_t centered, uint32_t now_ms, int16_t *notched_out, int16_t *filtered_out, float *ma_qrs_out, float *threshold_out) 
+static bool qrs_detector_push(int16_t centered, uint32_t now_ms,
+                              int16_t *notched_out, int16_t *filtered_out,
+                              float *ma_qrs_out, float *threshold_out)
 {
-    
+    /*
+     * The mains-notch is the common front end for every downstream branch:
+     * QRS detection, R-peak alignment, SQI and AF-derived features.
+     */
     float notch_input = (float)centered;
     SBfilter_writeInput(&notch_filter, notch_input);
     float notched = SBfilter_readOutput(&notch_filter);
+    int16_t notched_i16 = clamp_int16(notched);
 
     float bandpass = biquad_push(&detector.highpass, notched);
     bandpass = biquad_push(&detector.lowpass, bandpass);
@@ -163,7 +169,7 @@ static bool qrs_detector_push(int16_t centered, uint32_t now_ms, int16_t *notche
     float ma_qrs = energy_ma_push(&detector.qrs_ma, energy);
     float ma_beat = energy_ma_push(&detector.beat_ma, energy);
 
-    raw_history_push(&detector.raw_history, centered, now_ms);
+    raw_history_push(&detector.raw_history, notched_i16, now_ms);
     
     *filtered_out = clamp_int16(bandpass);
     
@@ -175,7 +181,7 @@ static bool qrs_detector_push(int16_t centered, uint32_t now_ms, int16_t *notche
     
     detector.mean_energy += (energy - detector.mean_energy) / (float)mean_count;
     float threshold = ma_beat + TWO_MA_BETA * detector.mean_energy;
-    *notched_out = clamp_int16(notched);
+    *notched_out = notched_i16;
     *ma_qrs_out = ma_qrs;
     *threshold_out = threshold;
     bool above = detector.sample_count >= DETECTOR_WARMUP_SAMPLES && ma_qrs > threshold;
@@ -253,9 +259,9 @@ ecg_record_t ecg_signal_process(int raw_adc, uint32_t now_ms)
         .notch_49_51hz = notched,
         .ma_qrs_100ms = ma_qrs,
         .threshold = threshold,
-        /* Analog HPF already removes baseline wander. */
+        /* Notch output is the shared input of all downstream algorithms. */
         .baseline = 0,
-        .corrected = raw_centered,
+        .corrected = notched,
         .filtered = filtered,
         .is_peak = is_peak ? 1U : 0U,
         .r_peak_timestamp_ms = detector.current_peak_ms,

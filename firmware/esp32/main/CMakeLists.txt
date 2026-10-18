@@ -27,7 +27,8 @@ set(ECG_SRCS "main.c" "utils/app_recovery.c" "utils/user_button.c"
              "components/filter/SBfilter.c" "components/af_model/af_model_int8.c"
              "components/af_model/af_runtime.c"
              "drivers/adc/adc.c" "drivers/timer/timer.c" "drivers/sd_spi/sd_spi.c" "components/os/semaphore.c"
-             "components/esp_ble/ecg_ble.c" "components/ring_buffer/ring_buffer.c")
+             "components/esp_ble/ecg_ble.c" "components/ring_buffer/ring_buffer.c"
+             "components/metrics/pipeline_metrics.c")
 
 if(SQI_COST_DISABLE)
     add_compile_definitions(SQI_COST_DISABLE=1)

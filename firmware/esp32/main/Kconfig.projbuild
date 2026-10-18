@@ -14,4 +14,11 @@ menu "ECG Monitor Configuration"
             Interval between connectable advertising events. One second lowers
             idle radio activity while remaining easy to discover.
 
+    config ECG_PROFILE_AUTOSTART
+        bool "Automatically start recording after boot (profiling only)"
+        default n
+        help
+            Starts a recording session two seconds after boot so an unattended
+            serial performance capture does not depend on BLE or the button.
+
 endmenu

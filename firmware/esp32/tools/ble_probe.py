@@ -1,12 +1,16 @@
 """Diagnose Windows BLE address-type/cache behavior for ECG-Monitor."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from bleak import BleakClient, BleakScanner
 
 
-async def main() -> None:
+COMMAND_UUID = "7b9a0003-6e6f-4e69-8d65-636700000001"
+
+
+async def main(command: str | None) -> None:
     found = await BleakScanner.find_device_by_filter(
         lambda device, adv: device.name == "ECG-Monitor"
         or adv.local_name == "ECG-Monitor",
@@ -31,6 +35,11 @@ async def main() -> None:
             await client.connect()
             print(f"CONNECTED address_type={address_type or 'default'}")
             print("services=", [str(service.uuid) for service in client.services])
+            if command is not None:
+                await client.write_gatt_char(
+                    COMMAND_UUID, command.encode("ascii"), response=True
+                )
+                print(f"COMMAND sent={command}")
             await client.disconnect()
             return
         except Exception as error:  # diagnostic tool deliberately records all backends
@@ -44,4 +53,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--command", choices=("start", "stop"))
+    args = parser.parse_args()
+    asyncio.run(main(args.command))

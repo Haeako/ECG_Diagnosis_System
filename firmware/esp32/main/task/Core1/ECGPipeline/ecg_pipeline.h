@@ -2,7 +2,6 @@
 #define ECG_PIPELINE_H
 
 #include "esp_err.h"
-#include "StateMachine.h"
 
 typedef enum {
     ECG_PIPELINE_EVENT_SD_FAULT,
@@ -15,12 +14,9 @@ typedef enum {
 typedef void (*ecg_pipeline_event_cb_t)(ecg_pipeline_event_t event, esp_err_t error, const char *detail);
 
 esp_err_t   ecg_pipeline_init               (void);
-void        ecg_pipeline_start_task         (void);
+esp_err_t   ecg_pipeline_start_tasks        (void);
 
-/* Apply the hardware/data-path behavior associated with an application mode. */
-esp_err_t   ecg_pipeline_apply_mode         (MODE mode);
-
-void        ecg_pipeline_stop_record        (void);
+esp_err_t   ecg_pipeline_stop_record        (void);
 esp_err_t   ecg_pipeline_start_recording    (void);
 
 void        ecg_pipeline_set_event_callback (ecg_pipeline_event_cb_t callback);

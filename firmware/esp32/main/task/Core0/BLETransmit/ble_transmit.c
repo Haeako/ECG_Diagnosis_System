@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 
 #include "components/esp_ble/ecg_ble.h"
+#include "components/metrics/pipeline_metrics.h"
 
 #define BLE_TX_QUEUE_LENGTH       32U
 #define BLE_TX_NOTIFY_INTERVAL_MS 10U
@@ -16,6 +17,7 @@
 
 static QueueHandle_t ble_tx_queue;
 static uint32_t last_enqueued_ms;
+static TaskHandle_t ble_tx_task_handle;
 
 static void ble_transmit_task(void *pv_parameters)
 {
@@ -41,11 +43,13 @@ esp_err_t ble_transmit_start(void)
     }
 
     if (xTaskCreatePinnedToCore(ble_transmit_task, "BLE_TX", BLE_TX_TASK_STACK_SIZE,
-                                NULL, BLE_TX_TASK_PRIORITY, NULL, BLE_TX_CORE) != pdPASS) {
+                                NULL, BLE_TX_TASK_PRIORITY, &ble_tx_task_handle,
+                                BLE_TX_CORE) != pdPASS) {
         vQueueDelete(ble_tx_queue);
         ble_tx_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
+    pipeline_metrics_register_task(METRICS_TASK_BLE, ble_tx_task_handle);
 
     return ESP_OK;
 }
@@ -62,9 +66,13 @@ void ble_transmit_enqueue(const ecg_record_t *sample)
     }
     last_enqueued_ms = sample->timestamp_ms;
 
-    if (xQueueSend(ble_tx_queue, sample, 0) != pdTRUE && sample->is_peak) {
+    if (xQueueSend(ble_tx_queue, sample, 0) != pdTRUE) {
+        pipeline_metrics_ble_drop();
+        if (!sample->is_peak) return;
         ecg_record_t discarded;
         (void)xQueueReceive(ble_tx_queue, &discarded, 0);
         (void)xQueueSend(ble_tx_queue, sample, 0);
     }
+    pipeline_metrics_ble_queue(uxQueueMessagesWaiting(ble_tx_queue),
+                               BLE_TX_QUEUE_LENGTH);
 }
