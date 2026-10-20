@@ -1,6 +1,54 @@
-# Báo cáo tổng hợp — BPM/RR và AF đã khôi phục
+# Báo cáo tổng hợp — BUTQDB SQI, BPM/RR và AF
 
-Cập nhật 19/10/2026. Lượt mới **không bổ sung hoặc chạy thêm SQI**.
+## BUTQDB SQI — hoàn tất 20/10/2026
+
+**[Báo cáo QRS — 28 cấu hình](benchmark_runs/butqdb_20261020/REPORT.md)** ·
+[28 dòng metric QRS](benchmark_runs/butqdb_20261020/metrics_qrs.csv) ·
+[Audit](benchmark_runs/butqdb_20261020/final_audit.json).
+
+Dữ liệu: `D:\DOC\ECG_Diagnosis_System\butqdb`, 18 records/15 subjects,
+35.773 cửa sổ 10 giây có consensus đầy đủ. Chia 5 folds theo subject; không
+thêm nhiễu nhân tạo, không dùng nhãn toàn bản ghi CinC2011 cho một lead.
+Chỉ đánh giá QRS: class 1+2 good, class 3 bad. Lấy lớp xấu nhất trong
+cửa sổ; loại cửa sổ có phần chưa gán nhãn. Các phần được yêu cầu đưa ra
+khỏi báo cáo chính đã chuyển sang [streck.md](benchmark_runs/butqdb_20261020/streck.md),
+không xóa dữ liệu hoặc predictions. Giữ feature fusion và cascade.
+
+Các hàng tiêu biểu dưới đây **không thay thế bảng đầy đủ**:
+
+| Target | Cấu hình | BA | AUC | Coverage | Bad accepted |
+|---|---|---:|---:|---:|---:|
+| QRS | Orphanidou (EP detector adaptation) | 0,9249 | 0,9351 | 71,86% | 0,12% |
+| QRS | Ho[NeuroKit] ≥80% | 0,9179 | 0,9792 | 72,79% | 0,58% |
+| QRS | Zhao[NeuroKit] | 0,5051 | 0,8020 | 88,82% | 15,90% |
+| QRS | Project-5SQI Logistic | 0,9647 | 0,9941 | 83,33% | 1,02% |
+| QRS | bSQI → Zhao[NeuroKit] cascade | 0,5518 | 0,5518 | 8,70% | 0,00% |
+
+BA tốt hơn trên trung bình cửa sổ **chưa chứng minh ưu thế chắc chắn theo
+subject**: 3 record chiếm 88,58% cửa sổ. Khoảng bất định của chênh lệch
+Project-5SQI Logistic với Orphanidou/Ho80 đều đi qua 0: chưa tách rõ ưu thế
+theo subject dù BA tổng thể cao hơn. Xem
+[paired subject-bootstrap QRS](benchmark_runs/butqdb_20261020/paired_ba_differences_qrs.csv)
+và subject-macro trong báo cáo. Cascade đạt bad accepted=0 cho QRS nhưng chỉ
+giữ 8,70% cửa sổ; không nên kết luận nó tốt nhất từ một tỷ lệ này.
+
+Đã đo [latency feature host](benchmark_runs/butqdb_20261020/feature_host_latency.csv)
+và [chi phí learned stage QRS](benchmark_runs/butqdb_20261020/learned_host_cost_qrs.csv).
+Chưa đo Flash/RAM mới trên ESP32. Đây là tái lập implementation trên BUTQDB,
+không phải khớp số liệu paper gốc; các fusion là biến thể dự án. BUTQDB không
+có ground truth AF/R-peak trong bản này nên không tính accuracy AF/BPM từ nhãn SQI.
+
+Pipeline được chấm là **ECG → cửa sổ 10s → score/features → gate good/bad →
+đối chiếu nhãn QRS chuyên gia**, không phải AF downstream. “Chọn được người
+thắng do ngẫu nhiên” là rủi ro khi chọn cấu hình đứng đầu trong nhiều cấu hình
+trên cùng 15 người; không có nghĩa model thay đổi dự đoán ngẫu nhiên mỗi lần chạy.
+Kiểm toán xác nhận nhãn, phân chia và phép tính; BA/coverage/bad accepted mới
+đo hiệu quả gate. Khớp paper gốc còn đòi hỏi cùng detector, thuật toán và protocol,
+không thể suy ra chỉ từ kiểm toán file thành công.
+
+## BPM/RR và AF — hoàn tất 19/10/2026
+
+Lượt BPM/AF này không bổ sung SQI; giữ nguyên kết quả dưới đây khi thêm survey BUTQDB.
 
 **Báo cáo chính:** [REPORT_BPM_AF.md](benchmark_runs/non_sqi_20261019/REPORT_BPM_AF.md).
 
@@ -26,7 +74,7 @@ BPM display: MAE **1,8104 BPM**, RMSE **6,0744 BPM**, **94,97%** mốc sai số 
 - [Số mẫu/nhãn](benchmark_runs/non_sqi_20261019/dataset_counts.csv)
 - [Checklist và giới hạn](benchmark_runs/non_sqi_20261019/REPORT_BPM_AF.md#7-giới-hạn-và-checklist-còn-lại)
 
-## CinC2011 — artifact cũ, ngoài phạm vi lượt mới
+## CinC2011 — artifact lịch sử
 
 **Giới hạn đã đính chính:** CinC2011 không có nhãn chất lượng riêng cho Lead II. Các hàng single-lead bên dưới chỉ dự đoán nhãn toàn bản ghi từ Lead II, **không dùng để kết luận/ranking SQI single-lead**. Giữ nguyên số lịch sử để truy vết; không phải kết quả mới trong lượt này.
 
