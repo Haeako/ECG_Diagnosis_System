@@ -253,3 +253,34 @@ builder AF firmware-RR cũ để làm kết quả mới: biểu thức timestamp
 của nó đã được xác nhận có overflow trên bản ghi dài; runner mới đổi kiểu
 trước phép nhân và kiểm tra monotonicity.
 
+## 15. Survey BUTQDB — hoàn tất 20/10/2026
+
+[Báo cáo QRS](benchmark_runs/butqdb_20261020/REPORT.md):
+28 cấu hình single-lead, 35.773 cửa sổ, 15 subjects; 5-fold subject-disjoint.
+Chỉ chấm khả năng sử dụng QRS: class1+2 good, class3 bad. Giữ fixed gates,
+từng SQI đơn, feature fusion Logistic/RBF-SVM và cascade. Không có Clifford-84
+vì BUTQDB chỉ có một kênh ECG. Các kết quả ngoài phạm vi được lưu trong
+[streck.md](benchmark_runs/butqdb_20261020/streck.md); không xóa artifact.
+
+Dataset nguồn: `D:\DOC\ECG_Diagnosis_System\butqdb`.
+Artifact: `benchmark_runs/butqdb_20261020/`.
+Đọc `method_registry_qrs.json` và `metrics_qrs.csv` cho phạm vi chính;
+`final_audit.json` ghi kiểm chứng cùng hashes. Registry/metrics gốc vẫn giữ
+đủ lần chạy cũ để truy vết phần đã đưa vào streck.md.
+
+Kiểm tra artifact có sẵn từ thư mục firmware:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE="1"
+..\..\.venv\Scripts\python.exe tools\test_butqdb_survey.py
+..\..\.venv\Scripts\python.exe tools\audit_butqdb_progress.py
+..\..\.venv\Scripts\python.exe tools\report_butqdb_survey.py
+```
+
+Lệnh trích xuất và huấn luyện lại nằm trong báo cáo. Runner phụ thuộc
+NeuroKit vendor và EP Limited DLL tại
+`D:\DOC\ECG_PAPER\temp\benchmark_results`; pyarrow nằm riêng trong
+`.cache/butqdb_deps`. Không thay dữ liệu/thuật toán rồi resume cache cũ.
+Đây là benchmark offline trên host, không phải parity hoặc benchmark ESP32.
+Không dùng quality labels của BUTQDB để tạo accuracy AF/BPM.
+
