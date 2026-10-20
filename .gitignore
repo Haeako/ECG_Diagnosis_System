@@ -123,3 +123,4 @@ firmware/esp32/build_cost_bsqi/*
 firmware/esp32/build_cost_bsqi_xqrs_ninja/*
 firmware/esp32/build_cost_clean_baseline/*
 firmware/esp32/build_cost_bsqi_xqrs/*
+firmware/esp32/benchmark_runs/*
