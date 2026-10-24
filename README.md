@@ -10,6 +10,17 @@ This repository contains the submission-oriented code for two connected parts:
 The paper experiment is the primary reproducible artifact. The firmware is kept
 separate because it has a different toolchain and validation protocol.
 
+## ECG Live Monitor V1
+
+The local React dashboard in `web/` connects through the existing Python BLE
+Gateway, with live corrected ECG, device telemetry, START/STOP, SQLite sessions,
+replay/export, diagnostics, themes and a clearly labeled deterministic Demo.
+See [Windows setup](docs/LOCAL_SETUP.md), [acceptance evidence](docs/ACCEPTANCE_MATRIX.md)
+and [current implementation state](docs/PROJECT_STATE.md).
+Software/mock verification passes; actual ESP32 acceptance remains blocked until
+a matching physical device is available. The static frontend requires a separate
+running Python Gateway for real BLE data.
+
 ## Repository layout
 
 ```text
@@ -17,6 +28,7 @@ experiments/                 runnable paper experiments
 src/ecg_benchmark/           metrics, baselines, and R-peak evaluation
 tests/                       deterministic unit tests
 firmware/esp32/              ESP-IDF application
+web/                        local ECG dashboard (React + TypeScript + Vite)
 docs/RESEARCH_SCOPE.md       claim, metric protocol, and limitations
 docs/legacy_python/          archived acquisition/simulation utilities
 data/                        local datasets (ignored)

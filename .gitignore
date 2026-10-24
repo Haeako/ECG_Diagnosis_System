@@ -28,7 +28,8 @@ build/
 *.bin
 *.elf
 *.map
-flasher_args.json # Generated in build directory
+# Generated ESP-IDF flash arguments
+flasher_args.json
 sdkconfig.old
 sdkconfig
 
@@ -56,6 +57,46 @@ __pycache__/
 *.egg-info/
 dist/
 
+# Python test, lint, type-check and coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node.js dependencies and frontend-generated artifacts (keep package-lock.json)
+node_modules/
+.npm/
+.vite/
+*.tsbuildinfo
+coverage/
+/web/playwright-report/
+/web/test-results/
+
+# Local Gateway/session databases and SQLite transaction files
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Local environment values; keep shareable setup templates
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
 # Virtual environment folders
 venv/
 .venv/
@@ -73,7 +114,8 @@ Desktop.ini
 
 # User-specific configuration files
 *.user
-*.workspace # General workspace files, can be from various tools
+# General personal workspace files
+*.workspace
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
 stm32/ECG/Middlewares/wavelib
@@ -88,6 +130,7 @@ firmware/esp32/visualize
 firmware/esp32/pre_move_data_preview.svg
 
 # Paper datasets, generated scorecards, and model artifacts
+/butqdb.zip
 data/*
 !data/README.md
 outputs/*

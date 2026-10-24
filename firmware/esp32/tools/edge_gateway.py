@@ -19,6 +19,68 @@ FLAG_AF_RAW = 1 << 1
 FLAG_AF_CONFIRMED = 1 << 2
 FLAG_AF_NEW = 1 << 3
 FLAG_BAD_SQI = 1 << 4
+SERVICE_UUID = "7b9a0001-6e6f-4e69-8d65-636700000001"
+
+
+class PacketDecoder:
+    """Shared BLE v1 decoder. Event time can precede the latest waveform.
+
+    Sample timestamps are firmware-advertised estimates, not ADC timestamps.
+    AF validity is absent from BLE v1 and must never be inferred from a zero.
+    """
+
+    def __init__(self):
+        self.sequence = None
+        self.anchor = None
+        self.last_wave = None
+
+    def timestamp(self, raw):
+        if self.anchor is None:
+            return raw
+        return self.anchor + ((raw - (self.anchor & 0xFFFFFFFF) + 2**31) % 2**32 - 2**31)
+
+    def decode(self, payload):
+        if len(payload) != 20 or payload[0] != 1:
+            raise ValueError("Expected 20-byte BLE v1 packet")
+        if payload[1] == 1:
+            _, _, count, period, seq, raw, *values = BATCH.unpack(payload)
+            if not 1 <= count <= 5 or period != 10:
+                raise ValueError("Invalid BLE v1 count or sample period")
+            delta = 1 if self.sequence is None else (seq - self.sequence) & 0xFFFF
+            if delta == 0 or delta >= 0x8000:
+                raise ValueError("Duplicate or out-of-order waveform sequence")
+            first = self.timestamp(raw)
+            if self.last_wave is not None and first <= self.last_wave:
+                raise ValueError("Device clock moved backwards; reconnect to start a new epoch")
+            self.sequence = seq
+            self.last_wave = first
+            end = first + (count - 1) * period
+            self.anchor = max(self.anchor if self.anchor is not None else end, end)
+            return {"type": "waveform", "sequence": seq, "period_ms": period,
+                    "missing_packets": delta - 1,
+                    "samples": [{"t": first + i * period, "v": value}
+                                for i, value in enumerate(values[:count])]}
+        if payload[1] == 2:
+            (_, _, flags, rules, raw, bpm, rr, score, status,
+             probability, af_score, event_id) = EVENT.unpack(payload)
+            if flags & ~31 or rules & ~15 or status not in (0, 1, 2):
+                raise ValueError("Invalid event flags, rules or SQI status")
+            if score not in range(101) and score != 255 or probability > 10000:
+                raise ValueError("Invalid SQI score or AF probability")
+            timestamp = self.timestamp(raw)
+            self.anchor = max(self.anchor if self.anchor is not None else timestamp, timestamp)
+            usable = status == 1 and not flags & FLAG_BAD_SQI and score != 255
+            return {"type": "event", "t": timestamp, "flags": flags,
+                    "r_peak": bool(flags & FLAG_R_PEAK), "bpm_raw": bpm, "rr_raw": rr,
+                    "bpm": bpm if usable and bpm else None,
+                    "rr_ms": rr if usable and rr else None,
+                    "sqi_score": None if score == 255 else score, "sqi_status": status,
+                    "sqi_rule_mask": rules, "af_probability_raw": probability / 10000,
+                    "af_valid": None, "af_score": af_score, "af_event_id": event_id,
+                    "af": "sqi-invalid" if not usable else
+                          "suspected" if flags & (FLAG_AF_CONFIRMED | FLAG_AF_NEW) else
+                          "raw-positive" if flags & FLAG_AF_RAW else "unknown"}
+        raise ValueError("Unknown BLE packet type")
 
 
 def open_database(path: Path) -> sqlite3.Connection:
@@ -51,6 +113,12 @@ async def find_device(name: str):
     return device
 
 
+def ble_client_options():
+    """Preserve the existing Windows connection/cache policy for both entrypoints."""
+    return ({"winrt": {"address_type": "public", "use_cached_services": False}}
+            if sys.platform == "win32" else {})
+
+
 async def run(args) -> None:
     from bleak import BleakClient
     database = open_database(args.database)
@@ -60,50 +128,46 @@ async def run(args) -> None:
     initial_events = database.execute(
         "SELECT COUNT(*) FROM events"
     ).fetchone()[0]
-    expected_sequence: int | None = None
+    decoder = PacketDecoder()
     packet_gaps = 0
     connected = False
 
     def notification(_sender, payload: bytearray) -> None:
-        nonlocal expected_sequence, packet_gaps
-        if len(payload) != 20 or payload[0] != 1:
-            print(f"Ignored unsupported packet length={len(payload)}")
+        nonlocal packet_gaps
+        try:
+            message = decoder.decode(payload)
+        except ValueError as error:
+            print(f"Ignored packet: {error}")
             return
         received = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
-        if payload[1] == 1:
-            version, kind, count, period_ms, sequence, first_ms, *samples = BATCH.unpack(payload)
-            gap = int(expected_sequence is not None and sequence != expected_sequence)
-            packet_gaps += gap
-            expected_sequence = (sequence + 1) & 0xFFFF
+        if message["type"] == "waveform":
+            packet_gaps += message["missing_packets"]
             database.executemany(
                 "INSERT INTO ecg_samples VALUES(?,?,?,?,?)",
-                [(received, sequence, first_ms + i * period_ms, value, gap)
-                 for i, value in enumerate(samples[:count])],
+                [(received, message["sequence"], item["t"], item["v"],
+                  message["missing_packets"]) for item in message["samples"]],
             )
-        elif payload[1] == 2:
-            (version, kind, flags, rule_mask, timestamp_ms, bpm, rr_ms,
-             sqi_score, sqi_status, af_probability, af_score,
-             af_event_id) = EVENT.unpack(payload)
+        else:
             database.execute(
                 "INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (received, timestamp_ms, flags, bpm, rr_ms, sqi_score,
-                 sqi_status, rule_mask, af_probability / 10000.0,
-                 af_score, af_event_id),
+                (received, message["t"], message["flags"], message["bpm_raw"],
+                 message["rr_raw"], message["sqi_score"] if message["sqi_score"] is not None else 255,
+                 message["sqi_status"], message["sqi_rule_mask"],
+                 message["af_probability_raw"], message["af_score"], message["af_event_id"]),
             )
+            flags = message["flags"]
             if flags & FLAG_AF_NEW:
-                print(f"AF_SUSPECTED event={af_event_id} p={af_probability/10000:.3f} bpm={bpm}")
+                print(f"AF_SUSPECTED event={message['af_event_id']} p={message['af_probability_raw']:.3f} bpm={message['bpm_raw']}")
             elif flags & FLAG_BAD_SQI:
-                print(f"BAD_SQI score={sqi_score} rules=0x{rule_mask:02x}")
+                print(f"BAD_SQI score={message['sqi_score']} rules=0x{message['sqi_rule_mask']:02x}")
             elif flags & FLAG_AF_CONFIRMED:
-                print(f"AF_ACTIVE event={af_event_id} p={af_probability/10000:.3f}")
+                print(f"AF_ACTIVE event={message['af_event_id']} p={message['af_probability_raw']:.3f}")
         database.commit()
 
     try:
         device = await find_device(args.name)
         print(f"Discovered {device.name} ({device.address})", flush=True)
-        client_options = ({"winrt": {"address_type": "public",
-                                      "use_cached_services": False}}
-                          if sys.platform == "win32" else {})
+        client_options = ble_client_options()
         async with BleakClient(device, **client_options) as client:
             connected = True
             print(f"Connected to {device.name} ({device.address})", flush=True)
@@ -153,6 +217,11 @@ def main() -> None:
     parser.add_argument("--duration", type=float, default=0.0,
                         help="disconnect after N seconds (0 keeps running)")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--serve", action="store_true", help="run local HTTP/WebSocket API")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--mock", action="store_true", help="deterministic simulated BLE adapter")
+    parser.add_argument("--origin", action="append", help="allowed browser origin (repeatable)")
     args = parser.parse_args()
     if args.self_test:
         assert BATCH.size == 20 and EVENT.size == 20
@@ -162,6 +231,12 @@ def main() -> None:
         assert BATCH.unpack(batch)[4:6] == (7, 1000)
         assert EVENT.unpack(event)[2] == FLAG_AF_NEW
         print("PASS BLE protocol v1: batch=20 event=20")
+        return
+    if args.serve:
+        import uvicorn
+        from live_gateway import create_app
+        uvicorn.run(create_app(args.database, mock=args.mock, origins=args.origin),
+                    host=args.host, port=args.port)
         return
     try:
         asyncio.run(run(args))
