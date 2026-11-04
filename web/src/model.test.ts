@@ -1,7 +1,20 @@
 import {describe,it,expect,vi} from 'vitest';
-import {DemoTransport,ECGStore,type Message,type Packet,type Session} from './model';
+import {DemoTransport,ECGStore,emptyState,type Message,type Packet,type Session,type BatteryPacket} from './model';
 
 describe('normalized ECG pipeline',()=>{
+  it('keeps battery separate from ECG and ages cached telemetry without heartbeats',()=>{
+    const clock=vi.spyOn(performance,'now').mockReturnValue(1000);
+    const store=new ECGStore();
+    store.ingest({...emptyState(),connection:'connected'});
+    const packet:BatteryPacket={v:1,type:'battery',source:'ble',epoch:1,received_utc:'test',t:500,valid:true,millivolts:3750,percent:50,low:false,charging:null,estimated:true};
+    store.ingest(packet);
+    expect(store.state.battery?.percent).toBe(50);
+    expect(store.samples).toHaveLength(0);expect(store.events).toHaveLength(0);
+    clock.mockReturnValue(17000);expect(store.batteryAge()).toBe(16);
+    store.ingest({...emptyState(),connection:'connected',battery:packet,battery_age_s:20});
+    expect(store.batteryAge()).toBe(20);
+    store.clear();expect(store.state.battery).toBeNull();clock.mockRestore();
+  });
   it('uses bounded buffers and preserves missing packet gaps and epochs',()=>{
     const store=new ECGStore();
     for(let i=0;i<6000;i++)store.ingest({v:1,type:'waveform',source:'ble',epoch:1,received_utc:'test',samples:[{t:i*10,v:i}],sequence:i,period_ms:10,missing_packets:i===5999?2:0});

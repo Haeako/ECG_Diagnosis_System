@@ -2,6 +2,33 @@
 
 ## Current Context
 
+2026-11-01 battery/LED work: calibrated GPIO32/ADC1_CH4 battery monitoring is
+implemented through BLE type 3, shared decoder, Gateway storage/WebSocket and
+web battery component. Hardware evidence and configuration/protocol/source-review
+details are in `docs/BATTERY_MONITOR.md`; read that instead of rescanning KiCad.
+The 100k/100k switched divider is verified from schematic/netlist/current PCB.
+Percentage is a coarse voltage estimate; charging/presence are unknown. Calibration
+unavailable or stale/invalid/disconnected telemetry shows unknown. PCB voltage,
+ECG timing/mux effects, charging/load and physical recovery checks remain PENDING.
+No flash, commit or push. Local Qwen unavailable; no retries.
+
+Prior LED task changes remain: active-low R25/G27/B26 reflect committed state
+(FAULT red, PREPARE R/G/B 150 ms, IDLE green, RECORD blue); one State Task helper,
+button GPIO16 and optional `GPIO_NUM_NC` LED. User SD_DET active-low and all other
+SD/BLE/DSP changes preserved. `dependencies.lock` retained exactly as found
+(SHA256 D9A8BB2C715016E175629354FFDC0E7F200B7485B80A5485FDFAF3F6D54E6464).
+Battery sampling adds no task/timer, uses the existing ECG task and serialized
+ADC1 ownership; finite 250 ms wait ensures sampling resumes after STOP.
+Phase 2 extracted only BatteryStatus UI and documented deferred structural work;
+no archive deletion, mass rename or dependency upgrade.
+Validation: ESP-IDF v6.1 build PASS (0xb3940 bytes, 52% app partition free),
+61 pytest tests PASS (includes production battery/ADC C harnesses), four Vitest
+tests PASS, TypeScript/Vite build PASS, Chromium battery Light/Dark/mobile and
+failure/stale checks PASS after extraction; legacy CLI self-test PASS.
+
+The dated entries below describe earlier work; their firmware-unchanged statement
+and test counts predate the November battery/LED changes.
+
 2026-10-24 ignore-policy follow-up: user authorized updating root `.gitignore`.
 Added Node dependencies/build metadata, Python caches, runtime SQLite databases
 and sidecars, local environment values (template exceptions), browser test outputs

@@ -162,6 +162,8 @@ class Gateway:
         self.retry_delay = 1
         self.tasks = []
         self.epoch = 0
+        self.battery = None
+        self.battery_received = None
 
     def log(self, text):
         self.logs.append({"at": utc(), "message": text})
@@ -174,6 +176,8 @@ class Gateway:
                 "last_sample_age_s": None if self.last_sample is None else round(now-self.last_sample, 2),
                 "command_sent": self.command_sent, "device_recording": "unknown (BLE v1 has no acknowledgement)",
                 "session_id": self.session, "epoch": self.epoch,
+                "battery": self.battery if self.connection == 'connected' else None,
+                "battery_age_s": None if self.battery_received is None else round(now-self.battery_received, 2),
                 "counters": self.counters.copy(), "packets_per_second": sum(t > now-5 for t in self.rates)/5,
                 "subscribers": len(self.subscribers), "logs": list(self.logs)}
 
@@ -213,6 +217,8 @@ class Gateway:
             self.decoder = PacketDecoder()
             self.last_sample = None
             self.command_sent = None
+            self.battery = None
+            self.battery_received = None
             client = None
             try:
                 if self.mock:
@@ -308,6 +314,9 @@ class Gateway:
                 self.log(str(error))
                 continue
             message.update(v=1, source='demo' if self.mock else 'ble', epoch=epoch, received_utc=received)
+            if message['type'] == 'battery':
+                self.battery = message
+                self.battery_received = time.monotonic()
             self.counters['packets'] += 1
             self.rates.append(time.monotonic())
             if message['type'] == 'waveform':
@@ -451,7 +460,7 @@ def create_app(database=Path('ecg_gateway.sqlite3'), mock=False, origins=None, *
             if format == 'json':
                 yield '{"session":' + json.dumps(metadata) + ',"packets":['
             else:
-                yield 'type,received_utc,timestamp_ms,value,sequence,missing_packets,flags,bpm_raw,rr_raw,sqi_score,sqi_status,af_probability_raw,af_score,af_event_id,af_valid\r\n'
+                yield 'type,received_utc,timestamp_ms,value,sequence,missing_packets,flags,bpm_raw,rr_raw,sqi_score,sqi_status,af_probability_raw,af_score,af_event_id,af_valid,battery_mv,battery_percent,battery_valid,battery_low\r\n'
             cursor = 0
             while True:
                 rows = store.packets(sid, cursor)
@@ -467,9 +476,12 @@ def create_app(database=Path('ecg_gateway.sqlite3'), mock=False, origins=None, *
                         writer = csv.writer(buffer)
                         if row['type'] == 'waveform':
                             for item in row['samples']:
-                                writer.writerow(['waveform', row['received_utc'], item['t'], item['v'], row['sequence'], row['missing_packets']] + ['']*9)
+                                writer.writerow(['waveform', row['received_utc'], item['t'], item['v'], row['sequence'], row['missing_packets']] + ['']*13)
+                        elif row['type'] == 'battery':
+                            writer.writerow(['battery', row['received_utc'], row['t']] + ['']*12
+                                            + [row['millivolts'], row['percent'], row['valid'], row['low']])
                         else:
-                            writer.writerow(['event', row['received_utc'], row['t'], '', '', '', row['flags'], row['bpm_raw'], row['rr_raw'], row['sqi_score'], row['sqi_status'], row['af_probability_raw'], row['af_score'], row['af_event_id'], 'unknown'])
+                            writer.writerow(['event', row['received_utc'], row['t'], '', '', '', row['flags'], row['bpm_raw'], row['rr_raw'], row['sqi_score'], row['sqi_status'], row['af_probability_raw'], row['af_score'], row['af_event_id'], 'unknown'] + ['']*4)
                         yield buffer.getvalue()
                 await asyncio.sleep(0)
             if format == 'json':

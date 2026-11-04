@@ -1,8 +1,9 @@
 export type Sample = {t:number; v:number; gap?:boolean};
 export type EventPacket = {v:1; type:'event'; source:string; epoch:number; received_utc:string; t:number; flags:number; r_peak:boolean; bpm:number|null; rr_ms:number|null; bpm_raw:number; rr_raw:number; sqi_score:number|null; sqi_status:number; sqi_rule_mask:number; af_probability_raw:number; af_valid:null; af_score:number; af_event_id:number; af:string; cursor?:number};
 export type WavePacket = {v:1; type:'waveform'; source:string; epoch:number; received_utc:string; samples:Sample[]; sequence:number; period_ms:number; missing_packets:number; cursor?:number};
-export type Packet = EventPacket | WavePacket;
-export type State = {v:1; type:'state'; source:string; connection:string; streaming:boolean; session_id:string|null; epoch:number; command_sent:{command:string;at:string;acknowledged:boolean}|null; device_recording:string; counters:Record<string,number>; packets_per_second:number; logs:{at:string;message:string}[]; last_sample_age_s?:number|null};
+export type BatteryPacket = {v:1;type:'battery';source:string;epoch:number;received_utc:string;t:number;valid:boolean;millivolts:number|null;percent:number|null;low:boolean;charging:null;estimated:true;cursor?:number};
+export type Packet = EventPacket | WavePacket | BatteryPacket;
+export type State = {v:1; type:'state'; source:string; connection:string; streaming:boolean; session_id:string|null; epoch:number; command_sent:{command:string;at:string;acknowledged:boolean}|null; device_recording:string; counters:Record<string,number>; packets_per_second:number; logs:{at:string;message:string}[]; last_sample_age_s?:number|null;battery?:BatteryPacket|null;battery_age_s?:number|null};
 export type Message = Packet | State | {v:1;type:'gap';reason:string};
 export type Session = {id:string;started_utc:string;ended_utc:string|null;source:string;status:string;reason:string|null;packets:number};
 
@@ -16,10 +17,12 @@ export class ECGStore {
   revision=0;
   lastArrival=0;
   private epoch='';
+  private batteryArrival=0;
   private gap=false;
   ingest(message:Message) {
     if(message.type==='gap') {this.gap=true; this.revision++; return;}
-    if(message.type==='state') {this.state=message; this.revision++; return;}
+    if(message.type==='state') {this.state=message;this.batteryArrival=performance.now();this.revision++;return;}
+    if(message.type==='battery') {this.state={...this.state,battery:message,battery_age_s:0};this.batteryArrival=performance.now();this.revision++;return;}
     const epoch=`${message.source}:${message.epoch}`;
     if(this.epoch!==epoch) {this.samples=[];this.events=[];this.epoch=epoch;this.gap=true;}
     if(message.type==='waveform') {
@@ -35,7 +38,8 @@ export class ECGStore {
     }
     this.revision++;
   }
-  clear() {this.samples=[];this.events=[];this.epoch='';this.gap=true;this.revision++;}
+  batteryAge() {return (this.state.battery_age_s??Infinity)+(performance.now()-this.batteryArrival)/1000;}
+  clear() {this.state={...this.state,battery:null,battery_age_s:null};this.samples=[];this.events=[];this.epoch='';this.gap=true;this.revision++;}
   // Telemetry is the newest received snapshot, even when its R-peak time is backdated.
   latestEvent() {return this.events.at(-1);}
 }
@@ -152,7 +156,7 @@ export class DemoTransport implements Transport {
     const packets=this.packets.get(id);if(!packets)throw new Error('Session not found');
     if(format==='json')return new Blob([JSON.stringify({session:this.sessions.find(s=>s.id===id),packets},null,2)],{type:'application/json'});
     const rows=['type,timestamp_ms,value,sequence,missing_packets,flags,bpm_raw,rr_raw,sqi_score,sqi_status,af_probability_raw,af_score,af_event_id,af_valid'];
-    for(const p of packets){if(p.type==='waveform')for(const s of p.samples)rows.push(['waveform',s.t,s.v,p.sequence,p.missing_packets,...Array(9).fill('')].join(','));else rows.push(['event',p.t,'','','',p.flags,p.bpm_raw,p.rr_raw,p.sqi_score,p.sqi_status,p.af_probability_raw,p.af_score,p.af_event_id,'unknown'].join(','));}
+    for(const p of packets){if(p.type==='waveform')for(const s of p.samples)rows.push(['waveform',s.t,s.v,p.sequence,p.missing_packets,...Array(9).fill('')].join(','));else if(p.type==='event') rows.push(['event',p.t,'','','',p.flags,p.bpm_raw,p.rr_raw,p.sqi_score,p.sqi_status,p.af_probability_raw,p.af_score,p.af_event_id,'unknown'].join(','));}
     return new Blob([rows.join('\r\n')],{type:'text/csv'});
   }
 }

@@ -14,6 +14,8 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "components/sqi_gate/sqi_runtime.h"
+#include "components/battery/battery.h"
+#include "esp_timer.h"
 
 /* 7b9a0001-6e6f-4e69-8d65-636700000001 */
 static const ble_uuid128_t ecg_service_uuid = BLE_UUID128_INIT(
@@ -336,6 +338,34 @@ static void ecg_ble_send_packet(const void *packet, uint8_t length)
         int rc = ble_gatts_notify_custom(conn_handle, data_handle, om);
         (void)rc;
     }
+}
+
+void ecg_ble_notify_battery(void)
+{
+    static uint32_t lastSentMs;
+    uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
+    if (!notify_enabled || conn_handle == BLE_HS_CONN_HANDLE_NONE
+        || (uint32_t)(nowMs - lastSentMs) < 5000U) {
+        return;
+    }
+    lastSentMs = nowMs;
+    BatteryReading reading = battery_snapshot(nowMs);
+    /* <BBBBIHBB8s>: version,type,flags,reserved,time,mV,percent,charging,reserved.
+     * Charging is unknown: TP4056 CHRG/STDBY are not connected to the ESP32. */
+    uint8_t packet[20] = { 1, 3, 0, 0 };
+    uint32_t timestampMs = reading.timestamp_ms;
+    for (unsigned i = 0; i < 4; ++i) {
+        packet[4U + i] = (uint8_t)(timestampMs >> (8U * i));
+    }
+    packet[10] = 255U;
+    packet[11] = 255U;
+    if (reading.valid) {
+        packet[2] = 1U | (reading.low ? 2U : 0U);
+        packet[8] = (uint8_t)reading.millivolts;
+        packet[9] = (uint8_t)(reading.millivolts >> 8);
+        packet[10] = reading.percent;
+    }
+    ecg_ble_send_packet(packet, sizeof(packet));
 }
 
 void ecg_ble_notify(const ecg_record_t *sample)

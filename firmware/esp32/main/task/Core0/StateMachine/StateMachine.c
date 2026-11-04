@@ -20,11 +20,13 @@
 
 #define PREPARE_RETRY_MS             500U
 #define IDLE_HEALTH_CHECK_MS         1000U
-#define FAULT_LED_TOGGLE_MS          500U
+#define PREPARE_LED_STEP_MS          150U
 #define SD_DETECT_DEBOUNCE_MS        250U
 
-#define RECORD_BUTTON_GPIO_NUM       GPIO_NUM_0
-#define RECORD_LED_GPIO_NUM          GPIO_NUM_21
+#define RECORD_BUTTON_GPIO_NUM       GPIO_NUM_16
+#define RED_LED_GPIO                 GPIO_NUM_25
+#define GREEN_LED_GPIO               GPIO_NUM_27
+#define BLUE_LED_GPIO                GPIO_NUM_26
 #define SD_DET_GPIO_NUM              GPIO_NUM_35
 #define SD_DET_GPIO_BIT_MASK         1ULL << SD_DET_GPIO_NUM
 #define SD_DET_GPIO_ALLOC_FLAG       0
@@ -34,7 +36,7 @@
 
 #define APP_MIN_FREE_HEAP            (20U * 1024U)
 #define APP_MIN_STATE_STACK          512U
-#define SD_CARD_PRESENT_LEVEL        1
+#define SD_CARD_PRESENT_LEVEL        0
 #define PREPARE_FAIL_LIMIT           20U
 
 #define TASK_TICK_TO_WAIT            pdMS_TO_TICKS(TASK_PERIOD_MS)
@@ -74,11 +76,52 @@ static prepare_context_t prepare_context = {
 
 static TickType_t last_prepare_attempt = 0;
 static TickType_t last_idle_health_check = 0;
-static TickType_t last_fault_led_toggle = 0;
-static bool fault_led_level = false;
 static int last_sd_detect_level = -1;
 static bool sd_detect_pending = false;
 static TickType_t sd_detect_last_edge = 0;
+
+/* Drive only the committed mode. Shorten the queue wait for a PREPARE edge. */
+static TickType_t update_leds(TickType_t now)
+{
+    static const gpio_num_t colors[] = { RED_LED_GPIO, GREEN_LED_GPIO, BLUE_LED_GPIO };
+    static gpio_num_t lit = GPIO_NUM_NC;
+    static MODE previous = FAULT_MODE;
+    static TickType_t prepareStart;
+    gpio_num_t next = RED_LED_GPIO;
+    TickType_t wait = TASK_TICK_TO_WAIT;
+
+    switch (current_mode) {
+    case PREPARE_MODE: {
+        if (previous != PREPARE_MODE) {
+            prepareStart = now;
+        }
+        const TickType_t step = pdMS_TO_TICKS(PREPARE_LED_STEP_MS);
+        const TickType_t elapsed = now - prepareStart;
+        const TickType_t remaining = step - elapsed % step;
+        next = colors[(elapsed / step) % 3U];
+        if (remaining < wait) {
+            wait = remaining;
+        }
+        break;
+    }
+    case IDLE_MODE:   next = GREEN_LED_GPIO; break;
+    case RECORD_MODE: next = BLUE_LED_GPIO; break;
+    case FAULT_MODE:
+    default:          break;
+    }
+    previous = current_mode;
+    if (next != lit) {
+        /* Active-low: switch the other cathodes off before lighting the new one. */
+        for (unsigned i = 0; i < 3U; ++i) {
+            if (colors[i] != next) {
+                ESP_ERROR_CHECK(gpio_set_level(colors[i], 1));
+            }
+        }
+        ESP_ERROR_CHECK(gpio_set_level(next, 0));
+        lit = next;
+    }
+    return wait;
+}
 
 static void app_storage_init(void)
 {
@@ -97,7 +140,7 @@ static void app_storage_init(void)
  */
 static void app_user_button_init(void)
 {
-    ESP_ERROR_CHECK(user_button_init(RECORD_BUTTON_GPIO_NUM, RECORD_LED_GPIO_NUM));
+    ESP_ERROR_CHECK(user_button_init(RECORD_BUTTON_GPIO_NUM, GPIO_NUM_NC));
 
     gpio_config_t sd_det_pin_cfg = {
         .pin_bit_mask   = SD_DET_GPIO_BIT_MASK,
@@ -307,14 +350,11 @@ static void event_handler(const state_event_t *state_event)
     }
 
     current_mode = target_mode;
-    user_button_set_recording_led(current_mode == RECORD_MODE);
+    (void)update_leds(xTaskGetTickCount());
 
     if (current_mode == IDLE_MODE) {
         prepare_context.fail_count = 0U;
         last_idle_health_check = 0;
-    } else if (current_mode == FAULT_MODE) {
-        fault_led_level = false;
-        last_fault_led_toggle = 0;
     }
 
     ESP_LOGW(TAG_APP, "%s -> %s event=%d error=%s",
@@ -386,16 +426,6 @@ static void record_state_handler(void)
     }
 }
 
-static void fault_state_handler(TickType_t now)
-{
-    if (last_fault_led_toggle == 0
-        || (now - last_fault_led_toggle)
-            >= pdMS_TO_TICKS(FAULT_LED_TOGGLE_MS)) {
-        last_fault_led_toggle = now;
-        fault_led_level = !fault_led_level;
-        user_button_set_recording_led(fault_led_level);
-    }
-}
 /**
  * @brief Run the periodic behavior for the current state.
  *  Enter a state by calling it's handler function, if state is invalid, switch to fault mode
@@ -407,7 +437,7 @@ static void enter_state(TickType_t now)
     case PREPARE_MODE: prepare_state_handler(now); break;
     case IDLE_MODE:    idle_state_handler(now); break;
     case RECORD_MODE:  record_state_handler(); break;
-    case FAULT_MODE:   fault_state_handler(now); break;
+    case FAULT_MODE:   break;
     default:
         (void)state_machine_post_event(SM_INVALID_MODE_EVENT,
                            ESP_ERR_INVALID_STATE);
@@ -422,7 +452,7 @@ static void state_machine_task(void *pvParameters)
     while (1) {
         state_event_t state_event;
         if (xQueueReceive(state_event_queue, &state_event,
-                          TASK_TICK_TO_WAIT) == pdTRUE) {
+                          update_leds(xTaskGetTickCount())) == pdTRUE) {
             event_handler(&state_event);
         }
 
@@ -455,6 +485,13 @@ static void state_machine_task(void *pvParameters)
 esp_err_t state_machine_start(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
+    const gpio_config_t ledConfig = {
+        .pin_bit_mask = (1ULL << RED_LED_GPIO) | (1ULL << GREEN_LED_GPIO) | (1ULL << BLUE_LED_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+    };
+    /* Preload the initial FAULT levels before enabling the outputs. */
+    (void)update_leds(xTaskGetTickCount());
+    ESP_ERROR_CHECK(gpio_config(&ledConfig));
     app_storage_init();
     app_user_button_init();
 

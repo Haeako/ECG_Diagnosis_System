@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'firmware/esp32/tools'))
-from edge_gateway import BATCH, EVENT, PacketDecoder
+from edge_gateway import BATCH, EVENT, BATTERY, PacketDecoder
 from live_gateway import Gateway, MockClient, SessionStore, create_app
 from fastapi.testclient import TestClient
 
@@ -232,3 +232,56 @@ def test_ingress_overflow_is_counted_and_stale_callbacks_ignored(tmp_path):
         assert gateway.counters['packets'] == count
         await gateway.close()
     asyncio.run(check())
+
+
+def test_battery_wire_and_ecg_compatibility():
+    decoder = PacketDecoder()
+    decoder.decode(batch(65535, 1000))
+    payload = BATTERY.pack(1, 3, 1, 0, 1020, 3750, 50, 255, bytes(8))
+    assert len(payload) == 20 and payload[8:12] == bytes.fromhex('a60e32ff')
+    result = decoder.decode(payload)
+    assert result['percent'] == 50 and result['millivolts'] == 3750
+    assert result['valid'] and result['charging'] is None
+    assert decoder.decode(batch(0, 1050))['missing_packets'] == 0
+    unknown = decoder.decode(BATTERY.pack(1, 3, 0, 0, 1060, 0, 255, 255, bytes(8)))
+    assert unknown['percent'] is None and unknown['millivolts'] is None and not unknown['low']
+    for flags, mv, percent, charging in [(4,3750,50,255),(1,0,0,255),(1,4400,100,255),
+                                        (1,3750,101,255),(0,3750,50,255),(2,0,255,255),(1,3750,50,1)]:
+        with pytest.raises(ValueError):
+            decoder.decode(BATTERY.pack(1,3,flags,0,1060,mv,percent,charging,bytes(8)))
+
+
+def test_battery_websocket_storage_export_and_disconnect(tmp_path):
+    import time
+    import csv
+    import io
+    class BatteryClient(MockClient):
+        async def generate(self):
+            while self.is_connected:
+                self.callback(None, BATTERY.pack(1,3,3,0,500,3400,11,255,bytes(8)))
+                await asyncio.sleep(.05)
+    app = create_app(tmp_path/'battery.db', mock=True, client_factory=BatteryClient)
+    with TestClient(app) as client:
+        assert client.get('/api/v1/state').json()['battery'] is None
+        with client.websocket_connect('/api/v1/ws', headers={'origin':'http://localhost:5173'}) as ws:
+            ws.receive_json()
+            client.post('/api/v1/connect', json={})
+            result = client.post('/api/v1/command', json={'command':'start'}).json()
+            sid = result['session_id']
+            for _ in range(20):
+                message = ws.receive_json()
+                if message['type'] == 'battery':
+                    assert message['percent'] == 11 and message['low']
+                    break
+            else:
+                pytest.fail('No battery packet forwarded')
+            time.sleep(.1)
+            state = client.get('/api/v1/state').json()
+            assert state['battery']['percent'] == 11 and not state['streaming']
+            assert state['battery_age_s'] < 1
+            client.post('/api/v1/command', json={'command':'stop'})
+        packets = client.get(f'/api/v1/sessions/{sid}/export').json()['packets']
+        assert packets[0]['type'] == 'battery'
+        rows = list(csv.DictReader(io.StringIO(client.get(f'/api/v1/sessions/{sid}/export?format=csv').text)))
+        assert rows[0]['battery_mv'] == '3400' and rows[0]['battery_percent'] == '11'
+        assert client.post('/api/v1/disconnect').json()['battery'] is None

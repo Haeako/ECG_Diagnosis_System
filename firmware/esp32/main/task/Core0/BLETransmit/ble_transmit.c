@@ -25,9 +25,10 @@ static void ble_transmit_task(void *pv_parameters)
 
     for (;;) {
         ecg_record_t sample;
-        if (xQueueReceive(ble_tx_queue, &sample, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(ble_tx_queue, &sample, pdMS_TO_TICKS(250)) == pdTRUE) {
             ecg_ble_notify(&sample);
         }
+        ecg_ble_notify_battery();
     }
 }
 

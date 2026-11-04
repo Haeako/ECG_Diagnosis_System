@@ -15,5 +15,7 @@ typedef void (*ecg_ble_command_cb_t)(ecg_ble_command_t command);
 void ecg_ble_set_command_callback(ecg_ble_command_cb_t callback);
 esp_err_t ecg_ble_init(void);
 void ecg_ble_notify(const ecg_record_t *sample);
+/* BLE_TX only, including idle. Adds packet type 3 without changing ECG v1. */
+void ecg_ble_notify_battery(void);
 
 #endif

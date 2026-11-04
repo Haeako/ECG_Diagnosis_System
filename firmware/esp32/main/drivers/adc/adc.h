@@ -11,3 +11,9 @@
 
 void ADC_Init(void);
 void ADC_Deinit(void);
+
+/* Initialize once before tasks; all channel access and handle teardown serialize. */
+esp_err_t ADC_LockInit(void);
+esp_err_t ADC_Read(int *raw);
+/* Called only by ECG_Task, after processing or while idle; never waits for the lock. */
+esp_err_t ADC_ReadBattery(int *raw);

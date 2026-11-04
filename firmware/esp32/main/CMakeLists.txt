@@ -26,6 +26,7 @@ set(ECG_SRCS "main.c" "utils/app_recovery.c" "utils/user_button.c"
              "task/Core0/BLETransmit/ble_transmit.c"
              "components/filter/SBfilter.c" "components/af_model/af_model_int8.c"
              "components/af_model/af_runtime.c"
+             "components/battery/battery.c"
              "drivers/adc/adc.c" "drivers/timer/timer.c" "drivers/sd_spi/sd_spi.c" "components/os/semaphore.c"
              "components/esp_ble/ecg_ble.c" "components/ring_buffer/ring_buffer.c"
              "components/metrics/pipeline_metrics.c")

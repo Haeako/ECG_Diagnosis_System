@@ -13,6 +13,7 @@ DATA_UUID = "7b9a0002-6e6f-4e69-8d65-636700000001"
 COMMAND_UUID = "7b9a0003-6e6f-4e69-8d65-636700000001"
 BATCH = struct.Struct("<BBBBHI5h")
 EVENT = struct.Struct("<BBBBIHHBBHHH")
+BATTERY = struct.Struct("<BBBBIHBB8s")
 
 FLAG_R_PEAK = 1 << 0
 FLAG_AF_RAW = 1 << 1
@@ -80,6 +81,21 @@ class PacketDecoder:
                     "af": "sqi-invalid" if not usable else
                           "suspected" if flags & (FLAG_AF_CONFIRMED | FLAG_AF_NEW) else
                           "raw-positive" if flags & FLAG_AF_RAW else "unknown"}
+        if payload[1] == 3:
+            _, _, flags, reserved, raw, millivolts, percent, charging, tail = BATTERY.unpack(payload)
+            valid = bool(flags & 1)
+            if flags & ~3 or reserved or tail != bytes(8) or charging != 255:
+                raise ValueError("Invalid battery flags or reserved fields")
+            if valid:
+                if not 2800 <= millivolts <= 4350 or percent > 100:
+                    raise ValueError("Invalid battery voltage or percentage")
+            elif flags or millivolts or percent != 255:
+                raise ValueError("Invalid unavailable battery representation")
+            # Battery does not alter ECG sequence or the waveform/event clock anchor.
+            return {"type": "battery", "t": self.timestamp(raw), "valid": valid,
+                    "millivolts": millivolts if valid else None,
+                    "percent": percent if valid else None, "low": bool(flags & 2),
+                    "charging": None, "estimated": True}
         raise ValueError("Unknown BLE packet type")
 
 
@@ -97,6 +113,11 @@ def open_database(path: Path) -> sqlite3.Connection:
         bpm INTEGER, rr_ms INTEGER, sqi_score INTEGER, sqi_status INTEGER,
         sqi_rule_mask INTEGER, af_probability REAL, af_score INTEGER,
         af_event_id INTEGER)"""
+    )
+    database.execute(
+        """CREATE TABLE IF NOT EXISTS battery_samples(
+        received_utc TEXT, timestamp_ms INTEGER, millivolts INTEGER,
+        percent INTEGER, valid INTEGER, low INTEGER)"""
     )
     database.commit()
     return database
@@ -147,6 +168,10 @@ async def run(args) -> None:
                 [(received, message["sequence"], item["t"], item["v"],
                   message["missing_packets"]) for item in message["samples"]],
             )
+        elif message["type"] == "battery":
+            database.execute("INSERT INTO battery_samples VALUES(?,?,?,?,?,?)",
+                             (received, message["t"], message["millivolts"], message["percent"],
+                              message["valid"], message["low"]))
         else:
             database.execute(
                 "INSERT INTO events VALUES(?,?,?,?,?,?,?,?,?,?,?)",

@@ -1,4 +1,5 @@
 #include "ecg_pipeline.h"
+#include "components/battery/battery.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -329,7 +330,11 @@ static void ecg_processing_task(void *pvParameters)
     uint32_t heartbeat_record_start_ms = 0U;
 
     while (1) {
-        if (xSemaphoreTake(adc_timer_semaphore_handle, portMAX_DELAY) != pdTRUE) {
+        /* A finite wait also wakes an already-blocked task after STOP. */
+        if (xSemaphoreTake(adc_timer_semaphore_handle, pdMS_TO_TICKS(250)) != pdTRUE) {
+            if (!record_active) {
+                battery_poll(ecg_now_ms());
+            }
             continue;
         }
 
@@ -347,8 +352,11 @@ static void ecg_processing_task(void *pvParameters)
             ringbuffer_drop_count = 0U;
         }
 
-        esp_err_t adc_ret = adc_oneshot_read(adc_handle, ADC_Channel, &raw);
+        esp_err_t adc_ret = ADC_Read(&raw);
         if (adc_ret != ESP_OK) {
+            if (!record_active) {
+                continue;
+            }
             ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_ADC_FAULT,
                                      adc_ret,
                                      "adc-read-failed");
@@ -405,6 +413,12 @@ static void ecg_processing_task(void *pvParameters)
         }
         size_t sd_free = xRingbufferGetCurFreeSize(sd_buf_handle);
         pipeline_metrics_sd_queue(2U * 16384U - sd_free, 2U * 16384U);
+        /* Optional ADC1 work only after ECG/DSP/queues, with >1.7 ms nominal
+         * slack before the next 360 Hz interrupt. No concurrent ADC reader. */
+        int64_t sinceIsr = esp_timer_get_time() - pipeline_metrics_last_isr_us();
+        if (record_active && sinceIsr >= 0 && sinceIsr < 1000) {
+            battery_poll(ecg_now_ms());
+        }
         pipeline_metrics_sample_end((uint32_t)
             ((uint64_t)esp_timer_get_time() - pipeline_start_us));
 
@@ -635,6 +649,14 @@ static void sd_write_task(void *pvParameters)
 
 esp_err_t ecg_pipeline_init(void)
 {
+    esp_err_t adcLockStatus = ADC_LockInit();
+    if (adcLockStatus != ESP_OK) {
+        return adcLockStatus;
+    }
+    esp_err_t batteryStatus = battery_init();
+    if (batteryStatus != ESP_OK) {
+        ESP_LOGW(TAG_ECG, "Battery calibration unavailable (%s)", esp_err_to_name(batteryStatus));
+    }
     pipeline_metrics_init();
     Semaphore_Init(&adc_timer_semaphore_handle);
     if (adc_timer_semaphore_handle == NULL) {

@@ -20,6 +20,12 @@ esp_err_t user_button_init(gpio_num_t new_button_pin, gpio_num_t new_recording_l
     esp_err_t ret = gpio_config(&button_config);
     if (ret != ESP_OK) return ret;
 
+    if (new_recording_led_pin == GPIO_NUM_NC) {
+        button_pin = new_button_pin;
+        recording_led_pin = GPIO_NUM_NC;
+        return ESP_OK;
+    }
+
     gpio_config_t led_config = {
         .pin_bit_mask = 1ULL << new_recording_led_pin,
         .mode = GPIO_MODE_OUTPUT,
