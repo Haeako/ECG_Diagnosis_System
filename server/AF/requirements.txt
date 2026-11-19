@@ -1,0 +1,15 @@
+numpy==2.5.3
+scipy==1.18.1
+pandas==3.0.5
+wfdb==4.3.1
+PyWavelets==1.10.0
+matplotlib==3.11.1
+psutil==7.2.2
+scikit-learn==1.9.1
+xgboost==3.4.1
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+h5py==3.14.0
+tensorflow==2.21.0
+tqdm==4.70.1
+shap

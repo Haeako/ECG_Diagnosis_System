@@ -1,0 +1,490 @@
+{
+  "status": "FROZEN",
+  "methods": {
+    "PanTompkins_pyecgdetectors": {
+      "id": 0,
+      "cmake_name": "pan",
+      "source": "firmware\\BPM\\modules\\pan_pyecg.c",
+      "source_sha256": "eb45f1cca984fbc999df4a0d16af66b3012cdc75e6363d4b60d97daca40df57d",
+      "header_sha256": "aaa2a12796d26143580343a37b07780f0e479bfb2f89782b358f51cba4abdf0c"
+    },
+    "Elgendi_pyecgdetectors": {
+      "id": 1,
+      "cmake_name": "elgendi",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\elgendi_pyecg.c",
+      "source_sha256": "b980e97417144b4b8ea85179fe37a2e0c2f0e73e6690bd7faedddaf3f3ded792",
+      "header_sha256": "4ed0b4f15d33ae4e8fa341351d01c73ebfd9b5046de4cc22d6234670512d52d6"
+    },
+    "FastQRS_0.3.0": {
+      "id": 2,
+      "cmake_name": "fast_qrs",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\fast_qrs_port.c",
+      "source_sha256": "f3979e964172b5490953fc55c9cdaa5db725a60f0157f46b83c2034bb8879a86",
+      "header_sha256": "ef09fae3c82fe8da2ae703d4d82d8c8163ee702173c1a5333a7d6077f0f5afdd"
+    },
+    "PanTompkinsPlusPlus_2022": {
+      "id": 3,
+      "cmake_name": "panpp",
+      "source": "firmware\\BPM\\modules\\pan_tompkins_plus_plus_port.c",
+      "source_sha256": "6395da979a6ce6a206c78702c200d6e4e2e411407e165ff8f3f9c350482799aa",
+      "header_sha256": "8e35b78855f83ba4e1718fc754479c835e1f47b97f5fe43a492166497e4f323a"
+    },
+    "WIM_nguyen": {
+      "id": 4,
+      "cmake_name": "wim_nguyen",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_nguyen.c",
+      "source_sha256": "a69c83f359d12e7c3d51e8e28c902cacc129f800722fb8a1793db953307861a1",
+      "header_sha256": "779e4584cd2928b3bc5605f69594d94659cad76a7e0939cfcccead6466f609f4"
+    },
+    "WIM_elgendi": {
+      "id": 5,
+      "cmake_name": "wim_elgendi",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_elgendi.c",
+      "source_sha256": "d01a4cf07aa49780e3243f2bebf0e6850008fb32d95fb65f491b02983d6b1fb6",
+      "header_sha256": "837f0f203b7f2927a082870e3cf5aaf46d9de06455178246b022c91dd85904cc"
+    },
+    "WIM_pantompkins": {
+      "id": 6,
+      "cmake_name": "wim_pantompkins",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_pantompkins.c",
+      "source_sha256": "69a93240d472b3ed762b5b75716d5dc4be922845172407c45dfcb7c6e6f4cc4f",
+      "header_sha256": "ef6c640bf812f1dc5f93ea2f1256c0ccaa17bce4a637b15ba69bc9612d8c8efa"
+    },
+    "WIM_hamilton": {
+      "id": 7,
+      "cmake_name": "wim_hamilton",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_hamilton.c",
+      "source_sha256": "1415f4130568688827d17fa2aa8ba9eabe640f49233bf319109b446d4ae4a22f",
+      "header_sha256": "a8a3d68ab2f4304a4d7ade77cbb8c2245c3ce22ee10a45a2570aa8ba8506ea14"
+    },
+    "WIM_arteagaFalconi": {
+      "id": 8,
+      "cmake_name": "wim_arteaga_falconi",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_arteaga_falconi.c",
+      "source_sha256": "8b10ac63c529b6719fb57efa194d9a4b179eb038e31b04bd824458058db048ee",
+      "header_sha256": "0059837a6f366752bb08f0417653eb8526b92f72ca2b69b053771fc2323dbc8b"
+    },
+    "WIM_shaik": {
+      "id": 9,
+      "cmake_name": "wim_shaik",
+      "source": "firmware\\BPM\\modules\\wim_shaik.c",
+      "source_sha256": "a273dfa315eb51faf34d640b2aa8b50152086d6609932255858cc22a87a3a279",
+      "header_sha256": "f4835294e9c517eeab716e33cc8d661c0a2312bc8ba25616acdda302892d7c8e"
+    },
+    "WIM_xu": {
+      "id": 10,
+      "cmake_name": "wim_xu",
+      "source": "firmware\\BPM\\modules\\wim_xu.c",
+      "source_sha256": "099b073fe7056a49032656da56316f5e3e1ec6e46e5289fa663575b921ab935d",
+      "header_sha256": "e7e36a642cb76e3b6d7cf607c188489b307771119d7e063c661195fc19763065"
+    },
+    "WIM_zhai": {
+      "id": 11,
+      "cmake_name": "wim_zhai",
+      "source": "firmware\\esp32\\main\\components\\qrs_detector\\wim_zhai.c",
+      "source_sha256": "c2173e0075b78836fbe3ca0ec6e7315c3c344713d47840921d5461b270a08aad",
+      "header_sha256": "26f64d10922649c1156fe9155ca2105526878de9ea82782dd2c4b7884ed60bde"
+    }
+  },
+  "cases": [
+    {
+      "record": "e0103",
+      "condition": "original",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "bw_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "ma_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0103",
+      "condition": "em_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "original",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "bw_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "ma_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e0302",
+      "condition": "em_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "original",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_-6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_0",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_6",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_12",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_18",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_24",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "bw_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "ma_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    },
+    {
+      "record": "e1304",
+      "condition": "em_mixed",
+      "start_seconds": 10,
+      "duration_seconds": 10
+    }
+  ],
+  "inputs_sha256": "2ac8cc157c8f54415fd04c65c6a5c23e806d7f22d0e75b37c998cda252942ff3",
+  "input_header_sha256": "c302b61d1d69947b6302d3ac4b99527534bfbb1e713b566e11548ff0676a4b79",
+  "parity_audit_sha256": "af4f703cb64351892e81d22ee26c4638e2ddf0ca3bbeedcc16ce13b26734b5fd"
+}

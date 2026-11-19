@@ -7,9 +7,148 @@
   },
   "configurePresets": [
     {
-      "name": "LOL",
+      "name": "bpm-runtime",
+      "inherits": "ecg-base",
       "cacheVariables": {
-        "IDF_TARGET": "esp32"
+        "ECG_BUILD_PROFILE": "bpm-runtime"
+      }
+    },
+    {
+      "name": "ecg-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "IDF_TARGET": "esp32",
+        "ECG_ENABLE_TFLM": false
+      }
+    },
+    {
+      "name": "af-extra-trees",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "af-extra-trees"
+      }
+    },
+    {
+      "name": "af-logistic",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "af-logistic"
+      }
+    },
+    {
+      "name": "af-random-forest",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "af-random-forest"
+      }
+    },
+    {
+      "name": "qrs-pan",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "qrs-pan"
+      }
+    },
+    {
+      "name": "qrs-elgendi",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "qrs-elgendi"
+      }
+    },
+    {
+      "name": "qrs-common",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "qrs-common"
+      }
+    },
+    {
+      "name": "qrs-common-tflm",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "qrs-common",
+        "ECG_ENABLE_TFLM": true
+      }
+    },
+    {
+      "name": "qrs-han-cnn",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "qrs-han-cnn",
+        "ECG_ENABLE_TFLM": true
+      }
+    },
+    {
+      "name": "sqi-synthetic",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-synthetic"
+      }
+    },
+    {
+      "name": "sqi-xqrs",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-xqrs"
+      }
+    },
+    {
+      "name": "sqi-logistic",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-logistic"
+      }
+    },
+    {
+      "name": "sqi-kramer",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-kramer"
+      }
+    },
+    {
+      "name": "sqi-kramer-rules",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-kramer-rules"
+      }
+    },
+    {
+      "name": "sqi-ho",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-ho"
+      }
+    },
+    {
+      "name": "sqi-clifford",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-clifford"
+      }
+    },
+    {
+      "name": "sqi-zhao",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-zhao"
+      }
+    },
+    {
+      "name": "sqi-orphanidou",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "sqi-orphanidou"
+      }
+    },
+    {
+      "name": "af-runtime",
+      "inherits": "ecg-base",
+      "cacheVariables": {
+        "ECG_BUILD_PROFILE": "af-runtime"
       }
     }
   ]

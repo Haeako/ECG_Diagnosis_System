@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ecg-cleanguard-benchmark"
 version = "0.2.0"
-description = "CleanGuard+ local-damage and R-peak preservation benchmark for ECG denoising"
+description = "Independent reproducible BPM, SQI and AFib module benchmarks"
 requires-python = ">=3.10"
 dependencies = [
   "matplotlib>=3.7",
@@ -31,8 +31,8 @@ sota = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["server*"]
+namespaces = true
 
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+

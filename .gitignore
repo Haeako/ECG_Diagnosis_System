@@ -28,8 +28,7 @@ build/
 *.bin
 *.elf
 *.map
-# Generated ESP-IDF flash arguments
-flasher_args.json
+flasher_args.json # Generated in build directory
 sdkconfig.old
 sdkconfig
 
@@ -57,46 +56,6 @@ __pycache__/
 *.egg-info/
 dist/
 
-# Python test, lint, type-check and coverage caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.tox/
-.nox/
-.coverage
-.coverage.*
-htmlcov/
-
-# Node.js dependencies and frontend-generated artifacts (keep package-lock.json)
-node_modules/
-.npm/
-.vite/
-*.tsbuildinfo
-coverage/
-/web/playwright-report/
-/web/test-results/
-
-# Local Gateway/session databases and SQLite transaction files
-*.sqlite
-*.sqlite3
-*.db
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite-journal
-*.sqlite3-wal
-*.sqlite3-shm
-*.sqlite3-journal
-*.db-wal
-*.db-shm
-*.db-journal
-
-# Local environment values; keep shareable setup templates
-.env
-.env.*
-!.env.example
-!.env.sample
-!.env.template
-
 # Virtual environment folders
 venv/
 .venv/
@@ -114,8 +73,7 @@ Desktop.ini
 
 # User-specific configuration files
 *.user
-# General personal workspace files
-*.workspace
+*.workspace # General workspace files, can be from various tools
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
 stm32/ECG/Middlewares/wavelib
@@ -130,11 +88,19 @@ firmware/esp32/visualize
 firmware/esp32/pre_move_data_preview.svg
 
 # Paper datasets, generated scorecards, and model artifacts
-/butqdb.zip
 data/*
 !data/README.md
 outputs/*
 !outputs/.gitkeep
+!outputs/BPM/
+!outputs/SQI/
+!outputs/AFib/
+outputs/BPM/*
+outputs/SQI/*
+outputs/AFib/*
+!outputs/BPM/.gitkeep
+!outputs/SQI/.gitkeep
+!outputs/AFib/.gitkeep
 checkpoints/
 *.pkl
 *.pt
@@ -153,10 +119,10 @@ espidf_ws/visualize/
 espidf_ws/ECG_FILTER_POWER_REPORT.md
 espidf_ws/pipeline_module_results_pre_move_positive_thr400_legend/
 espidf_ws/pipeline_module_results_pre_move_positive_thr400/
-reports/TONG_BAO_CAO_TIEN_DO_ECG.tex
+experiment/report/TONG_BAO_CAO_TIEN_DO_ECG.tex
 .vscode/settings.json
 Integrated_PCB/*
-A_signal_quality_assessment–ba.pdf
+experiment/report/references/A_signal_quality_assessment–ba.pdf
 firmware/esp32/benchmark_results/*
 
 firmware/esp32/build_cost/*
@@ -167,3 +133,43 @@ firmware/esp32/build_cost_bsqi_xqrs_ninja/*
 firmware/esp32/build_cost_clean_baseline/*
 firmware/esp32/build_cost_bsqi_xqrs/*
 firmware/esp32/benchmark_runs/*
+
+# Archived ESP32 build outputs, datasets, reports, and host experiments
+experiments/esp32/*
+
+# Local experiment datasets and generated run outputs
+experiment/data/*
+!experiment/data/README.md
+datasets/*
+!datasets/README.md
+visualize/results/
+experiment/report/outputs/*
+!experiment/report/outputs/.gitkeep
+experiment/report/qrs_rr_bpm/REPORT.md
+experiment/report/benchmark_runs/af_ho_gate_20261021/chunks/*s
+experiment/report/benchmark_runs/af_detector_selection_20261031/*
+experiment/report/benchmark_runs/af_convnext_singlelead_20261028_screen/*
+experiment/report/benchmark_runs/af_convnext_singlelead_20261028_quantized_batched/*
+experiment/report/benchmark_runs/af_external_20261022/jobs/*
+experiment/report/benchmark_runs/af_convnext_singlelead_20261028_final/*
+experiment/report/benchmark_runs/af_ho_gate_20261021/chunks/*
+experiment/report/benchmark_runs/af_ho_gate_20261021/jobs/*
+experiment/report/benchmark_runs/*
+experiment/report/host_bench/*
+experiment/src/rpeak_benchmarking
+build-bpm-module-replay/*
+build-dummy-none/*
+build-dummy-modules/*
+.cache/*
+experiment/src/esp32_archive/*
+external/*
+
+# Local pip scratch directories may contain access-restricted temporary files.
+/.pip-tmp/
+
+# Local Hugging Face dataset checkout; keep data out of the experiment branch.
+/butqdb/
+
+# Local ESP-IDF build trees and the standalone WIM vendor checkout.
+/build-*/
+/rpeak_benchmarking/

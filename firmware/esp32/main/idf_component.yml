@@ -1,3 +1,7 @@
 dependencies:
   idf:
     version: ">=6.0"
+  espressif/esp-tflite-micro:
+    version: "1.4.1"
+    rules:
+      - if: '${ECG_BUILD_WITH_TFLM} == "ON"'

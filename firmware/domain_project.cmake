@@ -1,0 +1,12 @@
+# Common ESP-IDF wiring only; each project owns its selected domain and cache.
+get_filename_component(ECG_FIRMWARE_ROOT "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
+if(NOT DEFINED ECG_BUILD_PROFILE)
+    set(ECG_BUILD_PROFILE "${ECG_DOMAIN_DEFAULT}")
+endif()
+if(NOT ECG_BUILD_PROFILE IN_LIST ECG_DOMAIN_PROFILES)
+    message(FATAL_ERROR "${ECG_BUILD_PROFILE} is outside domain ${ECG_DOMAIN}. Allowed: ${ECG_DOMAIN_PROFILES}")
+endif()
+set(EXTRA_COMPONENT_DIRS "${ECG_FIRMWARE_ROOT}/esp32/main")
+include("${ECG_FIRMWARE_ROOT}/esp32/main/cmake/EcgProjectOptions.cmake")
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(MINIMAL_BUILD ON)

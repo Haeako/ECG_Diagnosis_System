@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+set(ECG_DOMAIN SQI)
+set(ECG_DOMAIN_DEFAULT sqi-orphanidou)
+set(ECG_DOMAIN_PROFILES sqi-orphanidou sqi-synthetic sqi-xqrs sqi-logistic sqi-kramer sqi-kramer-rules sqi-ho sqi-clifford sqi-zhao)
+include("${CMAKE_CURRENT_LIST_DIR}/../domain_project.cmake")
+project(ecg_SQI)

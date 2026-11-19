@@ -1,161 +1,44 @@
-# CleanGuard ECG Benchmark and Edge Pipeline
+# ECG Experiment Benchmarks
 
-This repository contains the submission-oriented code for two connected parts:
-
-1. a reproducible ECG denoising benchmark centered on clean-signal damage and
-   annotation-based R-peak preservation; and
-2. an ESP32 pipeline for acquisition, filtering, R-peak/RR extraction, SD
-   recording, and BLE transport.
-
-The paper experiment is the primary reproducible artifact. The firmware is kept
-separate because it has a different toolchain and validation protocol.
-
-## ECG Live Monitor V1
-
-The local React dashboard in `web/` connects through the existing Python BLE
-Gateway, with live corrected ECG, device telemetry, START/STOP, SQLite sessions,
-replay/export, diagnostics, themes and a clearly labeled deterministic Demo.
-See [Windows setup](docs/LOCAL_SETUP.md), [acceptance evidence](docs/ACCEPTANCE_MATRIX.md)
-and [current implementation state](docs/PROJECT_STATE.md).
-Software/mock verification passes; actual ESP32 acceptance remains blocked until
-a matching physical device is available. The static frontend requires a separate
-running Python Gateway for real BLE data.
-
-## Repository layout
+Nhánh **`feature/experiment`** chỉ phục vụ tạo và tái tạo các số liệu trong [bảng báo cáo](docs/BENCHMARK_SUMMARY_TABLES.md): BPM/QRS, SQI và AFib. ESP32 là backend benchmark C. Nhánh này không chứa ứng dụng production, BLE/acquisition, gateway hoặc web monitor.
 
 ```text
-experiments/                 runnable paper experiments
-src/ecg_benchmark/           metrics, baselines, and R-peak evaluation
-tests/                       deterministic unit tests
-firmware/esp32/              ESP-IDF application
-web/                        local ECG dashboard (React + TypeScript + Vite)
-docs/RESEARCH_SCOPE.md       claim, metric protocol, and limitations
-docs/legacy_python/          archived acquisition/simulation utilities
-data/                        local datasets (ignored)
-outputs/                     generated scorecards (ignored)
+server/BPM/       prepare_dataset.py, eval.py, metrics.py, modules/
+server/SQI/       prepare_dataset.py, eval.py, metrics.py, modules/
+server/AF/        prepare_dataset.py, eval.py, metrics.py, modules/  (AFib)
+server/modules/   tiện ích dùng chung
+datasets/         dữ liệu gốc và prepared/<bài toán>/manifest.json
+outputs/          CSV, predictions, protocol và trạng thái theo bài toán
+visualize/results/ plot theo bài toán và lượt eval
+firmware/         các module C và backend thử nghiệm ESP32
+external/         dependency bên thứ ba, giữ nguyên source và không commit repo clone
 ```
 
-## Main experiment
+Mỗi phương pháp có một file trong `modules/`; file bắt đầu bằng `_` là helper. Ba domain dùng các môi trường `.venv` riêng đã có tại workspace. Chạy lệnh từ thư mục gốc; mỗi `--output` phải là thư mục mới.
 
-The final scorecard evaluates each denoiser on the same continuous QTDB
-windows with NSTDB noise:
-
-```text
-noisy input  -> denoiser -> reconstruction metrics
-clean input  -> denoiser -> CleanGuard damage
-denoised ECG -> Pan-Tompkins -> R-peak metrics against QTDB annotations
-```
-
-Reported metrics are:
-
-- utility: SNR, SNR improvement, PRD, RMSE, derivative RMSE, cosine similarity;
-- clean passthrough: CleanGuard PRD/RMSE/derivative RMSE/cosine similarity;
-- local clean damage (CleanGuard+): worst 1-second RMSE, maximum local PRD,
-  first/last-second boundary RMSE, and an auxiliary shift-corrected PRD with a
-  maximum lag of 20 ms;
-- downstream: R-peak TP/FP/FN, precision, recall, F1, miss rate, false discovery
-  rate, timing MAE, and RR-interval MAE. These are reported separately for
-  `D(noisy)` (`NoisyDenoised_*`) and `D(clean)` (`CleanPass_*`).
-
-CleanGuard is reported as a metric vector. CleanGuard+ prevents a short local
-or overlap-add boundary artifact from being hidden by a whole-window average.
-Shift correction is diagnostic only; primary scores preserve exact sample
-alignment and do not use DTW. The vector is not collapsed into one score
-without a pre-registered normalization and weight sensitivity analysis.
-
-## Environment
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[test]'
-```
-
-Keep PhysioNet datasets outside Git. The experiment expects extracted QTDB and
-NSTDB directories.
-
-## Run
-
-```bash
-python experiments/qtdb_cleanguard_rpeaks.py \
-  --qtdb-dir /path/to/qt-database-1.0.0 \
-  --nstdb-dir /path/to/mit-bih-noise-stress-test-database-1.0.0 \
-  --output outputs/qtdb_cleanguard_rpeaks
-```
-
-For a quick local smoke run, add `--records sel123 --windows-per-record 1`.
-Every run writes per-window results, an aggregated CSV/JSON, and the exact CLI
-configuration. Do not compare methods from different generated window sets.
-
-## Test
-
-```bash
-python -m pytest
-```
-
-## BPM and QRS benchmark
-
-The standalone detector benchmark compares conventional Pan–Tompkins with a
-noise-robust adaptive variant on QTDB ECG mixed with NSTDB muscle artifact. It
-reports micro precision/recall/F1, BPM MAE, host latency, real-time factor, and
-peak traced RAM:
+Tái tạo đầy đủ số liệu và plot đã chốt, đồng thời cập nhật Markdown:
 
 ```powershell
-.\.venv\Scripts\python.exe experiments/benchmark_bpm_qrs.py `
-  --qtdb-dir data/qtdb --nstdb-dir data/nstdb `
-  --output outputs/bpm_qrs_benchmark
+server/BPM/.venv/Scripts/python.exe server/BPM/eval.py --report --backend host --output outputs/BPM/report_host
+server/BPM/.venv/Scripts/python.exe server/BPM/eval.py --report --backend c --output outputs/BPM/report_c
+server/SQI/.venv/Scripts/python.exe server/SQI/eval.py --report --output outputs/SQI/report
+server/AF/.venv/Scripts/python.exe server/AF/eval.py --report --output outputs/AFib/report
 ```
 
-See [the benchmark protocol and measured results](docs/BPM_QRS_BENCHMARK.md).
+`--report` đọc cache đủ cohort đã audit, tính lại metrics, đối soát số đã chốt rồi lưu CSV, plot và báo cáo. Không chạy lại suy luận, train hoặc đo lại ESP32. Latency ESP32 trong bảng được giữ từ phép đo thiết bị đã hoàn tất. Nếu thiếu cache hoặc số liệu không khớp, lệnh dừng thay vì tự tạo số thay thế. Các cache/dataset/checkpoint nằm tại workspace và đang được ignore trong Git; clone nhánh không tự tải chúng về.
 
-Optional cloned Fast-QRS, Pan-Tompkins++, and ecg2rr LSTM detectors can be
-included with `--external-root external`. Install their runtime dependencies
-with `pip install -e ".[sota]"`. See the
-[lightweight/SOTA comparison](docs/BPM_QRS_SOTA_BENCHMARK.md).
-
-The current Adaptive PT detector was also tested against nine algorithms used
-by `ecg-tools/benchmark-qrs-detectors`. See the
-[classic-suite comparison](docs/BPM_QRS_CLASSIC_SUITE.md).
-
-A leakage-controlled three-stage stress test covers all NSTDB noise sources,
-device faults, compound failures, four event tolerances, and 70 locked QTDB
-records. See the [noise-coverage report](docs/NOISE_COVERAGE_3STAGE_REPORT.md).
-
-## ECG quality under muscle noise
-
-The separate Python pilot evaluates input-only quality indices against actual
-R/RR errors using QTDB source-reference `.atr` annotations and NSTDB `ma`.
-It does not change the legacy denoising scorecard or ESP32 firmware.
+Để chuẩn bị dữ liệu và chạy suy luận mới khi được yêu cầu:
 
 ```powershell
-python experiments/download_ecg_quality_data.py
-python experiments/ecg_quality_emg.py benchmark
-python experiments/ecg_quality_emg.py sd-csv --csv path/to/full_rate_sd.csv
+server/BPM/.venv/Scripts/python.exe server/BPM/prepare_dataset.py
+server/SQI/.venv/Scripts/python.exe server/SQI/prepare_dataset.py
+server/AF/.venv/Scripts/python.exe server/AF/prepare_dataset.py
 ```
 
-Use a new `--output` directory for each run. A failed quality calibration is
-reported explicitly, never repaired using test labels. SD mode reports SQIs
-without claiming reference accuracy or transferring QTDB thresholds to AD8232.
-See [the Vietnamese research report](docs/ECG_SIGNAL_QUALITY_REPORT.md).
+Bỏ `--report` và `--from-cache` để chạy module theo input đã chuẩn bị. `--from-cache` chỉ xuất metrics/plot của lựa chọn hiện tại, không công bố lại báo cáo. Chỉ `server/AF/eval.py --train-fusion` fit LR trên SHDB; nhãn AFDB không vào train hoặc chọn ngưỡng.
 
-Before exporting a learned quality gate, run the grouped feasibility check. It
-keeps a rejected model host-only and never writes it into the firmware tree:
+- **BPM/QRS:** EDB 57 record loại 33 source trùng QTDB, 22 điều kiện Original/BW/MA/EM và mixed; host full-record và C context10s/hop5s có giao thức riêng. F1 dùng tolerance ±50/150 ms; MAE/RMSE BPM không bỏ lỗi theo tolerance.
+- **SQI:** BUTQDB 35.773 cửa sổ, 18 record/15 người; AUC và coverage giữ cohort rõ ràng. SQI là chỉ số phụ, không chặn AF.
+- **AFib:** tám model trên cùng 18.470 cửa sổ thuần nhãn AFDB. RR heads nhận năm feature native đã audit; waveform models nhận ECG10s; fusion nhận 13 feature đồng bộ đã audit. LR đã train trên 93 người/294 session SHDB chuẩn bị, chưa phải toàn bộ thời lượng raw. Chưa xác minh disjoint với toàn bộ pretraining ECGFounder.
 
-```powershell
-python experiments/quality_gate_feasibility.py `
-  --windows outputs/ecg_quality_gate_v2/windows.csv `
-  --output outputs/ecg_quality_gate_v2/deployment
-```
-
-## Firmware
-
-The ESP-IDF project is under `firmware/esp32`:
-
-```bash
-cd firmware/esp32
-idf.py set-target esp32
-idf.py build
-```
-
-Hardware measurements and paper experiments are intentionally not mixed into
-one command. See `firmware/esp32/README.md` for the firmware data path.
+Chi tiết: [Python modules](server/README.md), [BPM](server/BPM/README.md), [SQI](server/SQI/README.md), [AFib](server/AF/README.md), [firmware benchmark](firmware/README.md). Báo cáo BPM chính: [REPORT.md](experiment/report/qrs_rr_bpm/REPORT.md).

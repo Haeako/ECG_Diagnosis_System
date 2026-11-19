@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+set(ECG_DOMAIN AF)
+set(ECG_DOMAIN_DEFAULT af-runtime)
+set(ECG_DOMAIN_PROFILES af-runtime af-extra-trees af-logistic af-random-forest)
+include("${CMAKE_CURRENT_LIST_DIR}/../domain_project.cmake")
+project(ecg_AF)

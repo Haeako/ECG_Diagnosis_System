@@ -1,0 +1,15 @@
+if(CMAKE_BUILD_EARLY_EXPANSION)
+    set(ECG_BPM_ALGORITHM "$ENV{ECG_BPM_ALGORITHM}")
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/sources.cmake")
+list(LENGTH replay_sources count)
+if(count LESS 2)
+    message(FATAL_ERROR "No C replay module selected: ${ECG_BPM_ALGORITHM}")
+endif()
+idf_component_register(SRCS ${replay_sources}
+    INCLUDE_DIRS "." "../../modules" "../../../esp32/main/components/qrs_detector"
+    PRIV_REQUIRES freertos esp_timer heap)
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE ${replay_definitions})
+    target_compile_options(${COMPONENT_LIB} PRIVATE -ffp-contract=off)
+endif()

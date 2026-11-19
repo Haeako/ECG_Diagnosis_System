@@ -131,5 +131,5 @@ This screening does not include added NSTDB noise or real AD8232 data. The next
 deployment decision must combine this external clean/pathological result with
 the locked 53-condition noise test and on-device RAM/cycle measurements.
 
-Artifacts: `outputs/mitdb_all_detectors/{summary.csv,per_window.csv,
-summary.json,manifest.json}`. Runner: `experiments/evaluate_mitdb_external.py`.
+Artifacts: `experiment/report/outputs/mitdb_all_detectors/{summary.csv,per_window.csv,
+summary.json,manifest.json}`. Runner: `experiment/src/experiments/evaluate_mitdb_external.py`.

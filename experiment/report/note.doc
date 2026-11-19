@@ -1,0 +1,1 @@
+TFLite bản Xiang đã chuyển được sang int8, còn 20,520 byte; sai khác đầu ra so với bản gốc tối đa 0.0039. Đây mới là kiểm tra trên máy tính, chưa phải kết quả ESP32. Tôi tiếp tục tích hợp bản này vào benchmark thiết bị để đo chất lượng nhịp, latency và RAM thực tế.

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "Isolated replay configuration")
+if(REPLAY_VECTOR_DIR)
+    set(ENV{REPLAY_VECTOR_DIR} "${REPLAY_VECTOR_DIR}")
+endif()
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+idf_build_set_property(MINIMAL_BUILD ON)
+project(ecg_pipeline_replay)

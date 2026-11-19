@@ -825,7 +825,7 @@ Khai báo development records trước, khóa tham số, lưu manifest/config/ha
 1. Pan–Tompkins 1985: hiểu pipeline gốc.
 2. Elgendi 2013: hiểu Two Moving Average và block QRS.
 3. Christov 2004: hiểu adaptive threshold nhiều thành phần.
-4. Code `src/ecg_benchmark/rpeaks.py`: đối chiếu lý thuyết với implementation.
+4. Code `experiment/src/ecg_benchmark/rpeaks.py`: đối chiếu lý thuyết với implementation.
 5. Code firmware `ExtractFeature.c`: hiểu state machine thật.
 6. Báo cáo Adaptive PT portable: hiểu gap Python–firmware.
 7. Paper SWT–SepConv: hiểu accuracy ceiling và cross-database.
@@ -836,17 +836,17 @@ Khai báo development records trước, khóa tham số, lưu manifest/config/ha
 
 ## 17. Tài liệu và file trong workspace
 
-- `src/ecg_benchmark/rpeaks.py`: Pan–Tompkins, Adaptive v1/v2 và portable.
+- `experiment/src/ecg_benchmark/rpeaks.py`: Pan–Tompkins, Adaptive v1/v2 và portable.
 - `firmware/esp32/main/task/Core1/ECGPipeline/ExFeature/ExtractFeature.c`: detector firmware hiện tại.
-- `experiments/benchmark_qrs_ceiling.py`: benchmark chung.
-- `experiments/tune_adaptive_portable_dev.py`: tuning development có khóa split.
-- `docs/QRS_CEILING_PARETO_REPORT.md`: ceiling/Pareto QTDB–NSTDB.
+- `experiment/src/experiments/benchmark_qrs_ceiling.py`: benchmark chung.
+- `experiment/src/experiments/tune_adaptive_portable_dev.py`: tuning development có khóa split.
+- `experiment/report/QRS_CEILING_PARETO_REPORT.md`: ceiling/Pareto QTDB–NSTDB.
 - `docs/ADAPTIVE_PT_V2_PIPELINE_VA_KHA_NANG_PORT_FIRMWARE.md`: kiến trúc và khả năng port.
 - `docs/BPM_COMMON_PROTOCOL_AND_ARCHITECTURE.md`: protocol và so sánh kiến trúc.
-- `outputs/qtdb_qrs_ceiling/`: kết quả QTDB.
-- `outputs/nstdb_qrs_ceiling/`: kết quả NSTDB.
-- `outputs/adaptive_portable_qtdb_locked/`: external test portable.
-- `outputs/adaptive_portable_nstdb/`: noise test portable.
+- `experiment/report/outputs/qtdb_qrs_ceiling/`: kết quả QTDB.
+- `experiment/report/outputs/nstdb_qrs_ceiling/`: kết quả NSTDB.
+- `experiment/report/outputs/adaptive_portable_qtdb_locked/`: external test portable.
+- `experiment/report/outputs/adaptive_portable_nstdb/`: noise test portable.
 
 ---
 

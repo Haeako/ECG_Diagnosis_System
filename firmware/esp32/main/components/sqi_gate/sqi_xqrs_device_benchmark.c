@@ -1,6 +1,6 @@
 #include "sqi_device_benchmark.h"
 
-#include <inttypes.h>
+#include <stdlib.h>
 #include <stdint.h>
 
 #include "esp_cpu.h"
@@ -11,40 +11,42 @@
 
 #define CPU_MHZ ((double)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ)
 
+#define REPEATS 7U
 static sqi_xqrs_workspace_t workspace;
+static float input[SQI_XQRS_MAX_SAMPLES];
+static uint16_t peaks[SQI_XQRS_MAX_PEAKS];
+static uint32_t cycles[REPEATS];
+
+static int compare_u32(const void *left, const void *right)
+{
+    const uint32_t a = *(const uint32_t *)left;
+    const uint32_t b = *(const uint32_t *)right;
+    return (a > b) - (a < b);
+}
 
 void sqi_device_benchmark_run(void)
 {
     for (uint32_t i = 0U; i < SQI_XQRS_MAX_SAMPLES; ++i) {
         uint32_t phase = i % SQI_XQRS_FS;
-        workspace.filtered[i] = phase < 10U
+        input[i] = phase < 10U
             ? (float)(phase <= 5U ? phase : 10U - phase) * 0.2f : 0.0f;
     }
 
-    uint32_t before = esp_cpu_get_cycle_count();
-    size_t secondary_count = sqi_xqrs_detect_250(
-        workspace.filtered, SQI_XQRS_MAX_SAMPLES,
-        workspace.filtered_candidates, SQI_XQRS_MAX_PEAKS, &workspace);
-
-    sqi_bsqi_state_t bsqi;
-    sqi_bsqi_reset(&bsqi);
-    for (uint32_t peak = SQI_XQRS_FS; peak < SQI_XQRS_MAX_SAMPLES;
-         peak += SQI_XQRS_FS) {
-        (void)sqi_bsqi_push_primary(&bsqi,
-            (peak * 1000U) / SQI_XQRS_FS);
+    size_t detected = 0U;
+    for (uint32_t repeat = 0U; repeat < REPEATS; ++repeat) {
+        const uint32_t before = esp_cpu_get_cycle_count();
+        detected = sqi_xqrs_detect_250(input, SQI_XQRS_MAX_SAMPLES,
+                                       peaks, SQI_XQRS_MAX_PEAKS, &workspace);
+        cycles[repeat] = esp_cpu_get_cycle_count() - before;
     }
-    for (size_t i = 0U; i < secondary_count; ++i) {
-        (void)sqi_bsqi_push_secondary(&bsqi,
-            ((uint32_t)workspace.filtered_candidates[i] * 1000U)
-            / SQI_XQRS_FS);
-    }
-    float score = sqi_bsqi_finalize(&bsqi, 50U);
-    uint32_t cycles = esp_cpu_get_cycle_count() - before;
+    qsort(cycles, REPEATS, sizeof(cycles[0]), compare_u32);
 
-    ESP_LOGI("SQI_BENCH", "RESULT method=bSQI-full cpu_mhz=%d "
-             "samples=%u secondary_peaks=%u finalize_n=1 "
-             "finalize_cycles=%" PRIu32 " finalize_us=%.6f score=%.6f",
-             CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ, SQI_XQRS_MAX_SAMPLES,
-             (unsigned)secondary_count, cycles, cycles / CPU_MHZ,
-             (double)score);
+    ESP_LOGI("SQI_BENCH", "RESULT method=WFDB-XQRS-C-port batch_fs=%u "
+             "samples=%u repeats=%u peaks=%u p50_us=%.3f p99_us=%.3f "
+             "workspace_bytes=%u input_bytes=%u peak_buffer_bytes=%u",
+             SQI_XQRS_FS, SQI_XQRS_MAX_SAMPLES, REPEATS, (unsigned)detected,
+             cycles[REPEATS / 2U] / CPU_MHZ,
+             cycles[REPEATS - 1U] / CPU_MHZ,
+             (unsigned)sizeof(workspace), (unsigned)sizeof(input),
+             (unsigned)sizeof(peaks));
 }

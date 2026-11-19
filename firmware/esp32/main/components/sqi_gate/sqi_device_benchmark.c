@@ -13,7 +13,7 @@
 #include "sqi_zhao.h"
 #include "sqi_kramer.h"
 #include "sqi_logistic_runtime.h"
-#include "task/Core1/ECGPipeline/ExFeature/ExtractFeature.h"
+#include "components/bpm/ExtractFeature.h"
 
 #define SAMPLE_COUNT 3600U
 #define FINALIZE_REPEATS 200U

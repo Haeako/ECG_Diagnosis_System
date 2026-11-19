@@ -13,6 +13,8 @@
 
 #define SQI_SAMPLE_RATE_HZ          360U
 #define SQI_WINDOW_MS               10000U
+#define SQI_HOP_MS                  1000U
+#define SQI_HOP_SAMPLES             (SQI_SAMPLE_RATE_HZ * SQI_HOP_MS / 1000U)
 #define SQI_WINDOW_SAMPLES          (SQI_SAMPLE_RATE_HZ * SQI_WINDOW_MS / 1000U)
 #define SQI_MAX_PEAKS               32U
 #define SQI_MIN_PEAKS               3U
@@ -22,12 +24,14 @@
 
 typedef struct {
     uint32_t window_start_ms;
+    uint32_t next_evaluation_ms;
     uint32_t window_id;
     uint16_t sample_count;
     int16_t samples[SQI_WINDOW_SAMPLES];
     uint32_t peak_ms[SQI_MAX_PEAKS];
     uint8_t peak_count;
     bool peak_overflow;
+    uint32_t peak_overflow_ms;
     ecg_sqi_result_t latest;
 } sqi_runtime_state_t;
 
@@ -44,20 +48,35 @@ static ecg_sqi_result_t unusable_result(void)
     return result;
 }
 
-static void reset_window(uint32_t now_ms)
+static void slide_window(void)
 {
-    ecg_sqi_result_t latest = state.latest;
-    uint32_t next_window_id = state.window_id + 1U;
-    memset(&state, 0, sizeof(state));
-    state.window_start_ms = now_ms;
-    state.window_id = next_window_id;
-    state.latest = latest;
+    if (state.sample_count > SQI_HOP_SAMPLES) {
+        uint16_t remaining = (uint16_t)(state.sample_count - SQI_HOP_SAMPLES);
+        memmove(state.samples, state.samples + SQI_HOP_SAMPLES,
+                remaining * sizeof(state.samples[0]));
+        state.sample_count = remaining;
+    } else {
+        state.sample_count = 0U;
+    }
+
+    state.window_start_ms += SQI_HOP_MS;
+    uint8_t retained = 0U;
+    for (uint8_t i = 0U; i < state.peak_count; ++i) {
+        if (state.peak_ms[i] >= state.window_start_ms) {
+            state.peak_ms[retained++] = state.peak_ms[i];
+        }
+    }
+    state.peak_count = retained;
+    if (state.peak_overflow && state.peak_overflow_ms < state.window_start_ms) {
+        state.peak_overflow = false;
+    }
 }
 
 void sqi_runtime_reset(uint32_t now_ms)
 {
     memset(&state, 0, sizeof(state));
     state.window_start_ms = now_ms;
+    state.next_evaluation_ms = now_ms + SQI_WINDOW_MS;
     state.latest.score = ECG_SQI_INSUFFICIENT_SCORE;
     state.latest.status = ECG_SQI_INSUFFICIENT;
     state.latest.template_correlation_x1000 = -1000;
@@ -114,17 +133,21 @@ ecg_sqi_result_t sqi_runtime_push(int16_t ecg_sample,
                                   uint32_t r_peak_timestamp_ms,
                                   uint32_t now_ms)
 {
-    if ((now_ms - state.window_start_ms) >= SQI_WINDOW_MS) {
+    if ((int32_t)(now_ms - state.next_evaluation_ms) >= 0) {
 #ifdef ESP_PLATFORM
         int64_t finalize_started_us = esp_timer_get_time();
 #endif
-        state.latest = evaluate_window();
+        ecg_sqi_result_t completed = evaluate_window();
+        completed.window_id = ++state.window_id;
+        slide_window();
+        state.next_evaluation_ms += SQI_HOP_MS;
+        if ((int32_t)(now_ms - state.next_evaluation_ms) >= 0) {
+            state.next_evaluation_ms = now_ms + SQI_HOP_MS;
+        }
 #ifdef ESP_PLATFORM
-        state.latest.finalize_us = (uint32_t)(esp_timer_get_time()
+        completed.finalize_us = (uint32_t)(esp_timer_get_time()
             - finalize_started_us);
 #endif
-        ecg_sqi_result_t completed = state.latest;
-        reset_window(now_ms);
         state.latest = completed;
     }
 
@@ -132,10 +155,13 @@ ecg_sqi_result_t sqi_runtime_push(int16_t ecg_sample,
         state.samples[state.sample_count++] = ecg_sample;
     }
     if (is_r_peak && r_peak_timestamp_ms >= state.window_start_ms) {
-        if (state.peak_count < SQI_MAX_PEAKS) {
+        if (state.peak_overflow) {
+            state.peak_overflow_ms = r_peak_timestamp_ms;
+        } else if (state.peak_count < SQI_MAX_PEAKS) {
             state.peak_ms[state.peak_count++] = r_peak_timestamp_ms;
         } else {
             state.peak_overflow = true;
+            state.peak_overflow_ms = r_peak_timestamp_ms;
         }
     }
     return state.latest;

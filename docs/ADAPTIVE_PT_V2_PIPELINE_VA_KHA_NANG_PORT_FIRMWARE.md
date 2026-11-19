@@ -48,7 +48,7 @@ threshold = rolling_median
 
 ## Bản Python streaming đã triển khai
 
-Code nằm trong `src/ecg_benchmark/rpeaks.py`:
+Code nằm trong `experiment/src/ecg_benchmark/rpeaks.py`:
 
 - `AdaptivePTPortable`: API `push(sample)` sample-by-sample.
 - `detect_r_peaks_adaptive_portable`: wrapper batch dùng đúng state machine trên.
