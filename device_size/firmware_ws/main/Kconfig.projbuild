@@ -1,0 +1,57 @@
+menu "ECG Monitor Configuration"
+
+    config ECG_BATTERY_RTOP_OHM
+        int "Battery R307 divider top resistance (ohms)"
+        range 1000 1000000
+        default 100000
+
+    config ECG_BATTERY_RBOTTOM_OHM
+        int "Battery R308 divider bottom resistance (ohms)"
+        range 1000 1000000
+        default 100000
+
+    config ECG_BATTERY_VREF_MV
+        int "Measured ADC reference fallback (mV, 0 requires eFuse calibration)"
+        range 0 1200
+        default 0
+
+    config ECG_BATTERY_GAIN_PERMILLE
+        int "Battery board calibration gain (1000 = unity)"
+        range 900 1100
+        default 1000
+
+    config ECG_BATTERY_OFFSET_MV
+        int "Battery board calibration offset (mV)"
+        range -200 200
+        default 0
+
+    config ECG_BATTERY_EMPTY_MV
+        int "Voltage-only estimate empty endpoint (mV)"
+        range 3000 3500
+        default 3300
+
+    config ECG_BATTERY_FULL_MV
+        int "Voltage-only estimate full endpoint (mV)"
+        range 4000 4250
+        default 4200
+
+    config ECG_BATTERY_LOW_PERCENT
+        int "Estimated low battery threshold (percent)"
+        range 1 30
+        default 15
+
+    config ECG_BLE_DEVICE_NAME
+        string "BLE device name"
+        default "ECG-Monitor"
+        help
+            Name advertised by the ECG BLE peripheral.
+
+    config ECG_BLE_ADV_INTERVAL_MS
+        int "BLE advertising interval (ms)"
+        range 20 10240
+        default 1000
+        help
+            Interval between connectable advertising events. One second lowers
+            idle radio activity while remaining easy to discover.
+
+endmenu
