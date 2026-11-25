@@ -1,0 +1,6 @@
+{
+  "sha256": {
+    "references/SQI/SQI.csv": "b00b6e49f8d68bb96dcae5afbdf642b33c91a9cdec3f6a43ca3d316389578a65",
+    "report/benchmark_runs/butqdb_20261020/windows.csv": "bf3e1df958e4600260f8554c77271f725add2597a114be168416bb57cf1a0334"
+  }
+}

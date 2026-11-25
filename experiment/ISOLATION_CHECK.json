@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "static_component_dependency_checks": [
+    "BPM:all",
+    "BPM:pan",
+    "BPM:elgendi",
+    "BPM:fast_qrs",
+    "BPM:panpp",
+    "BPM:wim_nguyen",
+    "BPM:wim_elgendi",
+    "BPM:wim_pantompkins",
+    "BPM:wim_hamilton",
+    "BPM:wim_arteaga_falconi",
+    "BPM:wim_shaik",
+    "BPM:wim_xu",
+    "BPM:wim_zhai",
+    "SQI:sqi-ho",
+    "SQI:sqi-xqrs",
+    "SQI:sqi-kramer",
+    "SQI:sqi-orphanidou",
+    "SQI:sqi-zhao",
+    "AFib:af-extra-trees"
+  ],
+  "build_executed": false,
+  "benchmark_executed": false,
+  "scope": "CMake component registration only, all sources/includes inside the selected ESP project; Python source syntax/import paths inspected"
+}

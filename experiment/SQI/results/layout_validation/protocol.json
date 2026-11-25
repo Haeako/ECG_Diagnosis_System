@@ -1,0 +1,31 @@
+{
+  "aspect": "SQI",
+  "methods": [
+    "averageQRS",
+    "bSQI C",
+    "dissimilarity",
+    "Ho",
+    "Kramer C",
+    "Orphanidou external C",
+    "templatematch",
+    "Zhao shared-peak C",
+    "zhao_fuzzy"
+  ],
+  "cache_replay": true,
+  "report_reproduction": true,
+  "diagnostic_subset": false,
+  "train_or_tune": false,
+  "source_sha256": {
+    "SQI\\reproduce.py": "378af30e64a833b8690f79e71328d6886e70116e1ffa35ab99b07f2527212bdb",
+    "SQI\\metrics.py": "94e3b3b1d4c4b71d48153aff9c4f8b4e96292fcb0cbfb63316f2220c85794548",
+    "SQI\\modules\\averageqrs.py": "982ad68b6bc4ee6d7e59947e355296500b68f031305f5b64fbcfb5aeeaa03cf2",
+    "SQI\\modules\\bsqi.py": "904a44ea58c58f5646b24d88f030bf7e4a0bab38ba2ad66795bc8f2abcbf578b",
+    "SQI\\modules\\dissimilarity.py": "48cab56918c1620644937dfcd46dd396ae4714e86250d79d83814d94250eeaff",
+    "SQI\\modules\\ho.py": "1159d8ada68325f3478af6c1092924502b20b8c350c709b071b735e0f5e1c1d1",
+    "SQI\\modules\\kramer.py": "d765893641ff1987db24f1f1823e9c848aec78ab785a84fbcbfcada3a83fddb2",
+    "SQI\\modules\\orphanidou.py": "4bff1a60be3bfe02bd1e2d413fc8c616f79ff4a79f18b6faeb7de9baa9b3eac2",
+    "SQI\\modules\\templatematch.py": "2bf9dbf7b635bb3b6ddf9d8482421783eb8e1baf3d8f90b71909f0306b04aeee",
+    "SQI\\modules\\zhao.py": "8b025938fa409eb3b23ba63d2b20db71a0e77330670bf3cb891642a24af27e52",
+    "SQI\\modules\\zhao_fuzzy.py": "b7725df556451b3f457407a2df3ea3201ed5342a5db2803ed639bf774a819ec4"
+  }
+}

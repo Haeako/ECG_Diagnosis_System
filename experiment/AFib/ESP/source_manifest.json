@@ -1,0 +1,35 @@
+{
+  "restored_from_git_revision": "6289632e865f83f2e77859935c1ecfa922ca8651",
+  "sources": [
+    {
+      "original": "firmware/esp32/main/components/af_model/af_model_esp32_benchmark.c",
+      "local": "main/components/af_model/af_model_esp32_benchmark.c",
+      "sha256": "b1bbbd00f0b998ca5960f96f5640fcfe7c2dd29bcd7ec1ec7c64c292b130e807",
+      "current_sha256": "b1bbbd00f0b998ca5960f96f5640fcfe7c2dd29bcd7ec1ec7c64c292b130e807"
+    },
+    {
+      "original": "firmware/esp32/main/components/af_model/af_model_esp32_benchmark.h",
+      "local": "main/components/af_model/af_model_esp32_benchmark.h",
+      "sha256": "eaf50a66d8278f73fcecd2d6be553030176b055a5fc9a4c2afe1e73c2bec336c",
+      "current_sha256": "eaf50a66d8278f73fcecd2d6be553030176b055a5fc9a4c2afe1e73c2bec336c"
+    },
+    {
+      "original": "firmware/esp32/main/components/af_model/af_model_int8.c",
+      "local": "main/components/af_model/af_model_int8.c",
+      "sha256": "2968f16c1bb53713bd6f597f8961d5426c380c0936188d03a5658f5c91e78a99",
+      "current_sha256": "2968f16c1bb53713bd6f597f8961d5426c380c0936188d03a5658f5c91e78a99"
+    },
+    {
+      "original": "firmware/esp32/main/components/af_model/af_model_int8.h",
+      "local": "main/components/af_model/af_model_int8.h",
+      "sha256": "456514c260440b20d42ad22a58ded7bd65a2fe75ad0ed3e42841b9c25da0af17",
+      "current_sha256": "456514c260440b20d42ad22a58ded7bd65a2fe75ad0ed3e42841b9c25da0af17"
+    }
+  ],
+  "variant": "latency_memory_only_no_conditioning",
+  "accuracy_parity_claimed": false,
+  "purpose": "latency_and_memory_only",
+  "filters_present": false,
+  "ble_present": false,
+  "filesystem_writes_present": false
+}

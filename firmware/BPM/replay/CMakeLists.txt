@@ -1,8 +1,0 @@
-cmake_minimum_required(VERSION 3.16)
-set(ECG_BPM_ALGORITHM all CACHE STRING "all or one standalone QRS module")
-set(ENV{ECG_BPM_ALGORITHM} "${ECG_BPM_ALGORITHM}")
-set(ECG_BUILD_PROFILE bpm-c-module-replay CACHE STRING "Audited 66-vector C module replay")
-set(SDKCONFIG_DEFAULTS "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults")
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-idf_build_set_property(MINIMAL_BUILD ON)
-project(ecg_bpm_module_replay)

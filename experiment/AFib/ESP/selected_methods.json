@@ -1,0 +1,15 @@
+{
+  "methods": {
+    "extra_trees_int8_rr": "af-extra-trees"
+  },
+  "not_ported": [
+    "logistic_regression_rr",
+    "random_forest_rr",
+    "extra_trees_float_rr",
+    "xgboost_rr",
+    "convnext",
+    "ecgfounder",
+    "fusion_lr_full_shdb"
+  ],
+  "scope": "Frozen INT8 RR feature classifier kernel, not waveform inference or server fusion."
+}

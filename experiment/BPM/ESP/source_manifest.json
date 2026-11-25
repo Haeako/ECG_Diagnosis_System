@@ -1,0 +1,167 @@
+{
+  "restored_from_git_revision": "6289632e865f83f2e77859935c1ecfa922ca8651",
+  "sources": [
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/elgendi_pyecg.c",
+      "local": "main/components/qrs_detector/elgendi_pyecg.c",
+      "sha256": "b980e97417144b4b8ea85179fe37a2e0c2f0e73e6690bd7faedddaf3f3ded792",
+      "current_sha256": "b12223f1321e24897289ac90f3f0c38290fd051f9816aeef9b7a9c205a8b918a"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/elgendi_pyecg.h",
+      "local": "main/components/qrs_detector/elgendi_pyecg.h",
+      "sha256": "4ed0b4f15d33ae4e8fa341351d01c73ebfd9b5046de4cc22d6234670512d52d6",
+      "current_sha256": "ae776d9821c5f4016aff608a528b10f815d5a70ef3da2caf8c40e672c60575d1"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/fast_qrs_port.c",
+      "local": "main/components/qrs_detector/fast_qrs_port.c",
+      "sha256": "f3979e964172b5490953fc55c9cdaa5db725a60f0157f46b83c2034bb8879a86",
+      "current_sha256": "ba4f6c5ef536254aac6440d578063469a7addf2357236e97055f306249f141dc"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/fast_qrs_port.h",
+      "local": "main/components/qrs_detector/fast_qrs_port.h",
+      "sha256": "ef09fae3c82fe8da2ae703d4d82d8c8163ee702173c1a5333a7d6077f0f5afdd",
+      "current_sha256": "cbc84121538dafa4fb2ab72a60e5bb327caf570da6cec68c71a856b8f4d3a162"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_arteaga_falconi.c",
+      "local": "main/components/qrs_detector/wim_arteaga_falconi.c",
+      "sha256": "8b10ac63c529b6719fb57efa194d9a4b179eb038e31b04bd824458058db048ee",
+      "current_sha256": "d31b8a28a98b08d76a091dc760be7e15f883384e97b1974b9d88fec67da4df47"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_arteaga_falconi.h",
+      "local": "main/components/qrs_detector/wim_arteaga_falconi.h",
+      "sha256": "0059837a6f366752bb08f0417653eb8526b92f72ca2b69b053771fc2323dbc8b",
+      "current_sha256": "cf94fbe95b642efbe5b2bae2e720a55b7cec0965de9cba5be0f97b6ac1745b1b"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_elgendi.c",
+      "local": "main/components/qrs_detector/wim_elgendi.c",
+      "sha256": "d01a4cf07aa49780e3243f2bebf0e6850008fb32d95fb65f491b02983d6b1fb6",
+      "current_sha256": "87ae3d187dcd16bad11df15b03da52ab59880a87a8a11503f6be05900c0893d4"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_elgendi.h",
+      "local": "main/components/qrs_detector/wim_elgendi.h",
+      "sha256": "837f0f203b7f2927a082870e3cf5aaf46d9de06455178246b022c91dd85904cc",
+      "current_sha256": "09948fb0c2185e09b5b3a14a8ea1e77a1c8868e3d8547c7392070b71ed610714"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_hamilton.c",
+      "local": "main/components/qrs_detector/wim_hamilton.c",
+      "sha256": "1415f4130568688827d17fa2aa8ba9eabe640f49233bf319109b446d4ae4a22f",
+      "current_sha256": "6c1a24e7ab0d1d8bdaebff025ea52838d9ef31888f2bf35e3aee03310cd725fc"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_hamilton.h",
+      "local": "main/components/qrs_detector/wim_hamilton.h",
+      "sha256": "a8a3d68ab2f4304a4d7ade77cbb8c2245c3ce22ee10a45a2570aa8ba8506ea14",
+      "current_sha256": "063450cb43432dc544c62c551fc45c4861b6bc3207ca92b155928ea9070874b1"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_nguyen.c",
+      "local": "main/components/qrs_detector/wim_nguyen.c",
+      "sha256": "a69c83f359d12e7c3d51e8e28c902cacc129f800722fb8a1793db953307861a1",
+      "current_sha256": "b781f1b82034fa00b0f45dbfdfd29c5cd8966ce1c3cde1bebca5074b5bc3b099"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_nguyen.h",
+      "local": "main/components/qrs_detector/wim_nguyen.h",
+      "sha256": "779e4584cd2928b3bc5605f69594d94659cad76a7e0939cfcccead6466f609f4",
+      "current_sha256": "23dd77b7ffe0f0123500cd7c87035879f8f069cfe5e06f6d237325adf31738dc"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_pantompkins.c",
+      "local": "main/components/qrs_detector/wim_pantompkins.c",
+      "sha256": "69a93240d472b3ed762b5b75716d5dc4be922845172407c45dfcb7c6e6f4cc4f",
+      "current_sha256": "9aebb1e5757d6e6ca8d61a2173759bb21e8ddf6e689fa5bbc37df7dae665999f"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_pantompkins.h",
+      "local": "main/components/qrs_detector/wim_pantompkins.h",
+      "sha256": "ef6c640bf812f1dc5f93ea2f1256c0ccaa17bce4a637b15ba69bc9612d8c8efa",
+      "current_sha256": "683f6e6592b4b0a1270761126086452627209af95c84acbbb126495b39d0400a"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_zhai.c",
+      "local": "main/components/qrs_detector/wim_zhai.c",
+      "sha256": "c2173e0075b78836fbe3ca0ec6e7315c3c344713d47840921d5461b270a08aad",
+      "current_sha256": "4bb106ad8e8db408f7949c629e7a50c16602537499c7d262038595fa0b04bd15"
+    },
+    {
+      "original": "firmware/esp32/main/components/qrs_detector/wim_zhai.h",
+      "local": "main/components/qrs_detector/wim_zhai.h",
+      "sha256": "26f64d10922649c1156fe9155ca2105526878de9ea82782dd2c4b7884ed60bde",
+      "current_sha256": "f70dcf508034b9295b9daca1a105fae5f5ad459eba52f83ce05541d4f6fab24d"
+    },
+    {
+      "original": "firmware/BPM/modules/pan_pyecg.c",
+      "local": "main/components/qrs_modules/pan_pyecg.c",
+      "sha256": "422a0928f3a93af78b4a31018eab6c7f7ac832b4cb73e4030b9f177afe0dc702",
+      "current_sha256": "49828220cc862340851763ccf77e9a252260bdf0af075369999f4185fe552c24"
+    },
+    {
+      "original": "firmware/BPM/modules/pan_pyecg.h",
+      "local": "main/components/qrs_modules/pan_pyecg.h",
+      "sha256": "8127f58b6471b539798f3f63576f611fcd82b26c5ace2801725a1cb1544a7a6c",
+      "current_sha256": "86b9003b3caf26975fe5518679688e06fef0fde6de339d16769a3d2d5d3cc916"
+    },
+    {
+      "original": "firmware/BPM/modules/pan_tompkins_plus_plus_port.c",
+      "local": "main/components/qrs_modules/pan_tompkins_plus_plus_port.c",
+      "sha256": "2346889f1312b2b890b0dfc1cb55bfb87e12f78031e24abd0122b62d084cef71",
+      "current_sha256": "caa529298f31233a20517d82868782a97c7ccddf651d9c62a5d75b5165fc079f"
+    },
+    {
+      "original": "firmware/BPM/modules/pan_tompkins_plus_plus_port.h",
+      "local": "main/components/qrs_modules/pan_tompkins_plus_plus_port.h",
+      "sha256": "3f859a174f14482b771f14f36dc42ed6113959cabe43ac173d14e2b1c9ab0744",
+      "current_sha256": "ac20e95f859517d7eedb0e8140b8271f86fa2cf872bc61a19d090a3f3b5884d3"
+    },
+    {
+      "original": "firmware/BPM/modules/qrs_module.c",
+      "local": "main/components/qrs_modules/qrs_module.c",
+      "sha256": "7915cd9ced84a69ef89b47dcca4529ace1263882f695546e0af6108fb0410e1d",
+      "current_sha256": "f563a34fc0be54c1604f797e04d4f9116beadc281f49fd2d4c1271d862a8385b"
+    },
+    {
+      "original": "firmware/BPM/modules/qrs_module.h",
+      "local": "main/components/qrs_modules/qrs_module.h",
+      "sha256": "c3989bc56fef0dedcbf52f0ae461e04491ab0a1c98f281bc82fa2188f486acfe",
+      "current_sha256": "60fa33c67d3e94fcf6787901cba922dcf00ee354b2bf9df80fb61f3e05de2e1d"
+    },
+    {
+      "original": "firmware/BPM/modules/wim_shaik.c",
+      "local": "main/components/qrs_modules/wim_shaik.c",
+      "sha256": "31c86e689945d9a531dc1fedf1ff3a641cbc33fc5da820518e3cb159179b99a1",
+      "current_sha256": "a3bd49ddfc1cef2778989a82158acf679b48de33456f4b90e55f56589614d631"
+    },
+    {
+      "original": "firmware/BPM/modules/wim_shaik.h",
+      "local": "main/components/qrs_modules/wim_shaik.h",
+      "sha256": "bbe39b54d23d2289b5f91240c5ea88b1f775b2cfe656dbea76ce5b4e557fd19e",
+      "current_sha256": "f4835294e9c517eeab716e33cc8d661c0a2312bc8ba25616acdda302892d7c8e"
+    },
+    {
+      "original": "firmware/BPM/modules/wim_xu.c",
+      "local": "main/components/qrs_modules/wim_xu.c",
+      "sha256": "b6136ef96f8f69253fd2da8eba33bf05ac91b66ab00cd1523e21f62d6a5efb22",
+      "current_sha256": "a95fdb96d6ae73965a97750f773fe64c57001d8be46c62c6e8553960bb52a57e"
+    },
+    {
+      "original": "firmware/BPM/modules/wim_xu.h",
+      "local": "main/components/qrs_modules/wim_xu.h",
+      "sha256": "1a43592ccff268f2f6bab3c655b6d6432e18aea1be14d724c94064bc6880b281",
+      "current_sha256": "e7e36a642cb76e3b6d7cf607c188489b307771119d7e063c661195fc19763065"
+    }
+  ],
+  "variant": "latency_memory_only_no_conditioning",
+  "accuracy_parity_claimed": false,
+  "purpose": "latency_and_memory_only",
+  "filters_present": false,
+  "ble_present": false,
+  "filesystem_writes_present": false
+}

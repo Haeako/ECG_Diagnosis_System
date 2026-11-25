@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Reproduce BPM",
+      "type": "process",
+      "command": "${workspaceFolder}/BPM/.venv/Scripts/python.exe",
+      "args": [
+        "${workspaceFolder}/BPM/reproduce.py"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Reproduce SQI",
+      "type": "process",
+      "command": "${workspaceFolder}/SQI/.venv/Scripts/python.exe",
+      "args": [
+        "${workspaceFolder}/SQI/reproduce.py"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Reproduce AFib",
+      "type": "process",
+      "command": "${workspaceFolder}/AFib/.venv/Scripts/python.exe",
+      "args": [
+        "${workspaceFolder}/AFib/reproduce.py"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Reproduce all",
+      "dependsOn": [
+        "Reproduce BPM",
+        "Reproduce SQI",
+        "Reproduce AFib"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}

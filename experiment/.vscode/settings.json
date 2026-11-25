@@ -1,0 +1,16 @@
+{
+  "files.exclude": {
+    "**/.venv": true,
+    "**/__pycache__": true,
+    ".cache": true,
+    "archive": true
+  },
+  "search.exclude": {
+    "archive": true,
+    "external": true,
+    "outputs": true,
+    "datasets": true,
+    "**/results": true,
+    "**/build": true
+  }
+}

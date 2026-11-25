@@ -1,0 +1,7 @@
+{
+  "sha256": {
+    "references/BPM/host.csv": "6c94dadfff43cb1a1bb327d20680011dc7ec6573c73d6e86f48b0e31b32fb036",
+    "references/BPM/device.csv": "94ad4d66f1b5030af7c37f268e57686f5fc181baee6817bd3cbf2b4300ff82c2",
+    "outputs/BPM/c_qrs_tolerance_20261118/condition_metrics.csv": "f8a658cd9afe996d124f64ef47d5be268f704f00e474f0526e33c3b3409483b4"
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "restored_from_git_revision": "6289632e865f83f2e77859935c1ecfa922ca8651",
+  "sources": [
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_bsqi.c",
+      "local": "main/components/sqi_gate/sqi_bsqi.c",
+      "sha256": "4455707f818b3c979a58b7e34a80e025e2a16813ff7cb7d6b8129fc431104088",
+      "current_sha256": "4455707f818b3c979a58b7e34a80e025e2a16813ff7cb7d6b8129fc431104088"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_bsqi.h",
+      "local": "main/components/sqi_gate/sqi_bsqi.h",
+      "sha256": "3d662e50b753c659dccca87f5b4f35ffdedd6e62f882c9f1895aa14b5bb0f0b7",
+      "current_sha256": "84ff8610e424713ffa02e2458af15b242e445a1996a0b42f7c28bf0a64e6d846"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_device_benchmark.h",
+      "local": "main/components/sqi_gate/sqi_device_benchmark.h",
+      "sha256": "696960732f22ccf13dd1e5af7226c771c018a105226282220b86e4c3ffb958e7",
+      "current_sha256": "696960732f22ccf13dd1e5af7226c771c018a105226282220b86e4c3ffb958e7"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_ho.c",
+      "local": "main/components/sqi_gate/sqi_ho.c",
+      "sha256": "830c2d780d40ff82fc061fbec552d22c6a75b137dc060380508c188e2e104e6e",
+      "current_sha256": "c435fd7ae18c9eb82c188d1739c29d5faa59c2ca8e28b3fcb33d6a4f11bbcdd1"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_ho.h",
+      "local": "main/components/sqi_gate/sqi_ho.h",
+      "sha256": "9b5d082ca34ba5611418c4cba754e3097ab6512a6f40578bd3d966887d8b8040",
+      "current_sha256": "54ca5341ae87238c8f2852ab78ed1016d86d0413bafdd6bb42f1a550cb4b99f5"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_ho_device_benchmark.c",
+      "local": "main/components/sqi_gate/sqi_ho_device_benchmark.c",
+      "sha256": "33734794d6a17674faaa8785b607da9065835f980d750d6a7b69751340051240",
+      "current_sha256": "33734794d6a17674faaa8785b607da9065835f980d750d6a7b69751340051240"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_kramer.c",
+      "local": "main/components/sqi_gate/sqi_kramer.c",
+      "sha256": "e988fb8ca36f5be8007d4e3adf283680bfc0c8d3374199315dab95ff0d765083",
+      "current_sha256": "e988fb8ca36f5be8007d4e3adf283680bfc0c8d3374199315dab95ff0d765083"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_kramer.h",
+      "local": "main/components/sqi_gate/sqi_kramer.h",
+      "sha256": "ca17a8092a6d77e39bc4eddfc6e3937a0ceff8f680651652a819db95d6ecd410",
+      "current_sha256": "480cd288f272726fb5faf48eb21ca60151269667b7456babfaf790633faab488"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_kramer_full.c",
+      "local": "main/components/sqi_gate/sqi_kramer_full.c",
+      "sha256": "7bd5dd4d529132e1e8cba3b0ff980a5e24e04d1bee7e7e7004584a793b6a193a",
+      "current_sha256": "50ece073cf702fa31a8d04b47ce63e13b9a022e9869252a22c820043470c1200"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_kramer_full.h",
+      "local": "main/components/sqi_gate/sqi_kramer_full.h",
+      "sha256": "cdb932cbdc1f04f15bee85b04264fd5a10803cf4ecd80853e03d933845f82996",
+      "current_sha256": "c5549b5ddceec7a659092a95e1256d7cd3bdf307318b48678dc7e159a7b16d92"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_kramer_full_device_benchmark.c",
+      "local": "main/components/sqi_gate/sqi_kramer_full_device_benchmark.c",
+      "sha256": "48be2b2a2f104e689afda747ec14d6ad4f571fbab783b8ec4fa193f815487eb2",
+      "current_sha256": "48be2b2a2f104e689afda747ec14d6ad4f571fbab783b8ec4fa193f815487eb2"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_orphanidou.c",
+      "local": "main/components/sqi_gate/sqi_orphanidou.c",
+      "sha256": "2747f275ddd0000e3b4d552b8ed432dfe63a7ad7fc540a3830a0b5f0db0f7f4a",
+      "current_sha256": "2747f275ddd0000e3b4d552b8ed432dfe63a7ad7fc540a3830a0b5f0db0f7f4a"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_orphanidou.h",
+      "local": "main/components/sqi_gate/sqi_orphanidou.h",
+      "sha256": "2fa9a05ab082c85085005078a091976ba48e1892da44c89b550246cf6df3cc97",
+      "current_sha256": "363d26f8084ec4e9b139c994ffdcf0f970213751cec87faf9fb82ee7c8c987ba"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_orphanidou_device_benchmark.c",
+      "local": "main/components/sqi_gate/sqi_orphanidou_device_benchmark.c",
+      "sha256": "937622bb9ffecbb961f6bf407cd8091ab390497ff41fe120a085dfd5f6750728",
+      "current_sha256": "937622bb9ffecbb961f6bf407cd8091ab390497ff41fe120a085dfd5f6750728"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_runtime.c",
+      "local": "main/components/sqi_gate/sqi_runtime.c",
+      "sha256": "280f581af63a83bd71dd949d344d574591712b674983c0ce86097a98c86a1538",
+      "current_sha256": "280f581af63a83bd71dd949d344d574591712b674983c0ce86097a98c86a1538"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_runtime.h",
+      "local": "main/components/sqi_gate/sqi_runtime.h",
+      "sha256": "02e079428020c8b8e3472e9fe1a6943d44f379b35fda5a309ca84dcf9e91cd5c",
+      "current_sha256": "c18af65c5f56ea02f101e89c671a81a055e6af8bbc4a937c8ccebcacd34f9851"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_template_matching.c",
+      "local": "main/components/sqi_gate/sqi_template_matching.c",
+      "sha256": "e0fefce42e7150b1c9ef975c5eb9dc8867e661bd5b8c3381debf2d84effd5ddf",
+      "current_sha256": "e0fefce42e7150b1c9ef975c5eb9dc8867e661bd5b8c3381debf2d84effd5ddf"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_template_matching.h",
+      "local": "main/components/sqi_gate/sqi_template_matching.h",
+      "sha256": "3ddbb601612dc39cbafaf738e18a8c8fa1bf3698430531affd8f78be835b3559",
+      "current_sha256": "a7f26260adf5cfd50312573421abc67695d9c982dd90f4e2e02022b1d6db75a8"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_xqrs.c",
+      "local": "main/components/sqi_gate/sqi_xqrs.c",
+      "sha256": "bab2b38dd1194e5d41fa71df3419a60dc8b845dfe06606727b5da1d850f86cdc",
+      "current_sha256": "75950ab61fc4f99862144a8ab5bb3ce97d1b41c90296270dd5d39e4d96de80c4"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_xqrs.h",
+      "local": "main/components/sqi_gate/sqi_xqrs.h",
+      "sha256": "76c36c57a1eaa900a9660ffe7f66ccf3ec05f1a9dcd916e4928458a9e1c40a98",
+      "current_sha256": "735e23fe172e62e01773d1de180ec01756933ac6acc0ac7002f002033ef1f41c"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_xqrs_device_benchmark.c",
+      "local": "main/components/sqi_gate/sqi_xqrs_device_benchmark.c",
+      "sha256": "d08d70c561484da6a1fb119586831706df5c30f666651cef02d5b415b71e591d",
+      "current_sha256": "d08d70c561484da6a1fb119586831706df5c30f666651cef02d5b415b71e591d"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_zhao.c",
+      "local": "main/components/sqi_gate/sqi_zhao.c",
+      "sha256": "d3fc90454212ed5c5ce215fbe9c936e3652397dd8be4862dd033bb66251559b8",
+      "current_sha256": "d3fc90454212ed5c5ce215fbe9c936e3652397dd8be4862dd033bb66251559b8"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_zhao.h",
+      "local": "main/components/sqi_gate/sqi_zhao.h",
+      "sha256": "55e785ea2b6bb7cb0663b8d943bfb9566bcfe5474526373bc24c5a94a314f813",
+      "current_sha256": "b6d325bd03b2043862d7321ebe8f904e5ec8fdd273d764ad928d5cf3eebe2012"
+    },
+    {
+      "original": "firmware/esp32/main/components/sqi_gate/sqi_zhao_device_benchmark.c",
+      "local": "main/components/sqi_gate/sqi_zhao_device_benchmark.c",
+      "sha256": "1793355ac7a115bc6bc5ebc1dfe5afc689524bfa3d8df7965318dc8ab1ed8243",
+      "current_sha256": "1793355ac7a115bc6bc5ebc1dfe5afc689524bfa3d8df7965318dc8ab1ed8243"
+    }
+  ],
+  "variant": "latency_memory_only_no_conditioning",
+  "accuracy_parity_claimed": false,
+  "purpose": "latency_and_memory_only",
+  "filters_present": false,
+  "ble_present": false,
+  "filesystem_writes_present": false
+}

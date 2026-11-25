@@ -1,0 +1,16 @@
+{
+  "methods": {
+    "Ho": "sqi-ho",
+    "bSQI C": "sqi-xqrs",
+    "Kramer C": "sqi-kramer",
+    "Orphanidou external C": "sqi-orphanidou",
+    "Zhao shared-peak C": "sqi-zhao"
+  },
+  "not_ported": [
+    "averageQRS",
+    "dissimilarity",
+    "templatematch",
+    "zhao_fuzzy"
+  ],
+  "scope": "Native kernel microbenchmarks; external/shared R providers are not all included in each timer."
+}

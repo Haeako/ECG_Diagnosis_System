@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "scope": "latency_memory_only",
+  "module_sources_isolated": true,
+  "conditioning_filters": false,
+  "BLE": false,
+  "filesystem_writes": false,
+  "native_kernel_syntax": "PASS",
+  "component_registration_configurations": 19,
+  "firmware_build_run": false,
+  "benchmark_run": false,
+  "device_flashed": false,
+  "accuracy_equivalence_claimed": false
+}

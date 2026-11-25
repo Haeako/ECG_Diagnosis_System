@@ -1,0 +1,20 @@
+{
+  "source": "BPM/RESULTS.md: C/ESP32 table",
+  "methods": {
+    "PanTompkins_pyecgdetectors": "pan",
+    "Elgendi_pyecgdetectors": "elgendi",
+    "FastQRS_0.3.0": "fast_qrs",
+    "PanTompkinsPlusPlus_2022": "panpp",
+    "WIM_nguyen": "wim_nguyen",
+    "WIM_elgendi": "wim_elgendi",
+    "WIM_pantompkins": "wim_pantompkins",
+    "WIM_hamilton": "wim_hamilton",
+    "WIM_arteagaFalconi": "wim_arteaga_falconi",
+    "WIM_shaik": "wim_shaik",
+    "WIM_xu": "wim_xu",
+    "WIM_zhai": "wim_zhai"
+  },
+  "default": "all",
+  "vectors": 66,
+  "accuracy_scope": "57 EDB records, 22 conditions; C accuracy computed on host; ESP32 parity/latency use 66 vectors"
+}

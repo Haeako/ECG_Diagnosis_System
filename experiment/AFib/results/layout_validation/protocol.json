@@ -1,0 +1,31 @@
+{
+  "aspect": "AFib",
+  "methods": [
+    "convnext",
+    "ecgfounder",
+    "extra_trees_float_rr",
+    "extra_trees_int8_rr",
+    "fusion_lr_full_shdb",
+    "logistic_regression_rr",
+    "random_forest_rr",
+    "xgboost_rr"
+  ],
+  "cache_replay": true,
+  "report_reproduction": true,
+  "diagnostic_subset": false,
+  "train_fusion": false,
+  "inputs": "RR heads: frozen native5-feature inputs; waveform models: fresh10s ECG; fusion: frozen13-feature synchronized branch inputs",
+  "no_AFDB_fit_or_tuning": true,
+  "source_sha256": {
+    "AFib\\reproduce.py": "00b5008bbf0f949cc7d61f6909a88977fbbe6602ffa62f115a921d471b9d2ea3",
+    "AFib\\metrics.py": "afa3ddcb6252fc97d24942b540aa629449fda02002ee8805e60fb8d39b9955a2",
+    "AFib\\modules\\convnext.py": "826da1ccb06a29da4034ba6154235f38c5fe05623c6bfce7a99d8fae47d97c10",
+    "AFib\\modules\\ecgfounder.py": "0517faef84c6d2066b5fa0015ffa38a2a8e055151929286fdef28917c20fe1d6",
+    "AFib\\modules\\extra_trees_float_rr.py": "36aa06f3bafdd672189c3cebec39a2bde3b8091d1b630f0228c1155ff6a94327",
+    "AFib\\modules\\extra_trees_int8_rr.py": "0097b419afa777b4a6908692b1c12685f92c841e2c027a7b35649bd99a228693",
+    "AFib\\modules\\fusion_lr.py": "d5296775366ec95dc4ced6357ef9a2306a0555aade6229d563756d737902df56",
+    "AFib\\modules\\logistic_regression_rr.py": "f63fdce77fd04369f2dd2937c67dffdfea53a89a6126912a467ecf5e0ab67500",
+    "AFib\\modules\\random_forest_rr.py": "5a9a27c4ce773e874415d3c35819a5c17873a1501e903f91cf1fec713ebab967",
+    "AFib\\modules\\xgboost_rr.py": "a3d95f15df9986942407aa488cbed7b0a1700aefacb2e46645c25682c529925b"
+  }
+}

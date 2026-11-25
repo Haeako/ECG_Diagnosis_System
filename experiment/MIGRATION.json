@@ -1,0 +1,103 @@
+{
+  "moves": [
+    {
+      "from": "server/BPM",
+      "to": "experiment/BPM"
+    },
+    {
+      "from": "server/SQI",
+      "to": "experiment/SQI"
+    },
+    {
+      "from": "server/AF",
+      "to": "experiment/AFib"
+    },
+    {
+      "from": "server/modules",
+      "to": "experiment/utils"
+    },
+    {
+      "from": "server",
+      "to": "experiment/archive/server_metadata"
+    },
+    {
+      "from": "datasets",
+      "to": "experiment/datasets"
+    },
+    {
+      "from": "docs",
+      "to": "experiment/docs"
+    },
+    {
+      "from": "external",
+      "to": "experiment/external"
+    },
+    {
+      "from": "firmware",
+      "to": "experiment/firmware"
+    },
+    {
+      "from": "outputs",
+      "to": "experiment/outputs"
+    },
+    {
+      "from": "visualize",
+      "to": "experiment/visualize"
+    },
+    {
+      "from": "rpeak_benchmarking",
+      "to": "experiment/external/rpeak_benchmarking"
+    },
+    {
+      "from": "experiment/src",
+      "to": "experiment/archive/src"
+    },
+    {
+      "from": "build",
+      "to": "experiment/archive/builds/build"
+    },
+    {
+      "from": "build-bpm-module-replay",
+      "to": "experiment/archive/builds/build-bpm-module-replay"
+    },
+    {
+      "from": "build-candidates",
+      "to": "experiment/archive/builds/build-candidates"
+    },
+    {
+      "from": "build-dummy-modules",
+      "to": "experiment/archive/builds/build-dummy-modules"
+    },
+    {
+      "from": "build-dummy-none",
+      "to": "experiment/archive/builds/build-dummy-none"
+    },
+    {
+      "from": "build-fast-qrs",
+      "to": "experiment/archive/builds/build-fast-qrs"
+    },
+    {
+      "from": ".venv",
+      "to": "experiment/.venv"
+    },
+    {
+      "from": "pyproject.toml",
+      "to": "experiment/archive/legacy_pyproject.toml"
+    },
+    {
+      "from": ".cache",
+      "to": "experiment/.cache"
+    },
+    {
+      "from": "experiment/firmware/BPM/replay",
+      "to": "experiment/BPM/ESP"
+    }
+  ],
+  "historical_audits": "Kept byte-for-byte; paths in historical evidence retain their original spelling.",
+  "entry_points": [
+    "BPM/reproduce.py",
+    "SQI/reproduce.py",
+    "AFib/reproduce.py"
+  ],
+  "training_requested": false
+}

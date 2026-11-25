@@ -1,0 +1,62 @@
+{
+  "reproduction": {
+    "BPM_python_methods": 18,
+    "BPM_C_ESP32_methods": 12,
+    "SQI_methods": 9,
+    "AFib_methods": 8,
+    "metrics_match_pre_migration": true
+  },
+  "tests": {
+    "regression_tests": 10,
+    "passed": 10
+  },
+  "training_performed": false,
+  "device_flashed": false,
+  "firmware_builds": {
+    "BPM": {
+      "status": "PASS",
+      "profile": "all 12 selected modules",
+      "binary": "BPM/ESP/build/ecg_bpm_module_replay.bin",
+      "sha256": "4caa45480209bf9c4b4bd58ab61e16b53d264d4a674b15c67667ca0a18874ed2",
+      "idf_exit_code": 0
+    },
+    "SQI": {
+      "status": "PASS",
+      "profile": "sqi-ho",
+      "binary": "SQI/ESP/build/ecg_SQI.bin",
+      "sha256": "cf296ae8b87d602021934687ccc3f9803be75c3970ecfde4f825c521238601e3",
+      "idf_exit_code": 0
+    },
+    "AFib": {
+      "status": "PASS",
+      "profile": "af-extra-trees",
+      "binary": "AFib/ESP/build/ecg_AFib.bin",
+      "sha256": "b09bb5d7b7d5fbc72358458923ff7b0dd043cb13927edd8e517dfebb92a6f381",
+      "idf_exit_code": 0
+    }
+  },
+  "after_seed_and_local_sqi_main_edit": {
+    "benchmark_rerun": false,
+    "build_rerun": false,
+    "note": "Previous validation describes the earlier source revision; latest edits not executed at user request."
+  },
+  "after_module_isolation": {
+    "benchmark_rerun": false,
+    "build_rerun": false,
+    "note": "Previous builds predate local source separation; validate new source with build_isolated."
+  },
+  "after_latency_memory_only_edit": {
+    "status": "PASS",
+    "scope": "latency_memory_only",
+    "module_sources_isolated": true,
+    "conditioning_filters": false,
+    "BLE": false,
+    "filesystem_writes": false,
+    "native_kernel_syntax": "PASS",
+    "component_registration_configurations": 19,
+    "firmware_build_run": false,
+    "benchmark_run": false,
+    "device_flashed": false,
+    "accuracy_equivalence_claimed": false
+  }
+}

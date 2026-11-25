@@ -1,6 +1,0 @@
-cmake_minimum_required(VERSION 3.16)
-set(ECG_DOMAIN BPM)
-set(ECG_DOMAIN_DEFAULT bpm-runtime)
-set(ECG_DOMAIN_PROFILES bpm-runtime bpm-candidates bpm-fast-qrs qrs-pan qrs-elgendi qrs-common qrs-han-cnn)
-include("${CMAKE_CURRENT_LIST_DIR}/../domain_project.cmake")
-project(ecg_BPM)

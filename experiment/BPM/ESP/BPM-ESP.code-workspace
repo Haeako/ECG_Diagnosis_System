@@ -1,0 +1,14 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "idf.espIdfPathWin": "C:/esp/v6.0.1/esp-idf",
+    "idf.buildPathWin": "${workspaceFolder}/build_latency_memory",
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.buildDirectory": "${workspaceFolder}/build_latency_memory",
+    "cmake.autoDetectSourceDirectory": false
+  }
+}

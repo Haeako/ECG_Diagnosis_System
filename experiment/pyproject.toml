@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecg-experiment-benchmarks"
+version = "0.3.0"
+description = "Isolated BPM, SQI and AFib reproducibility workspace"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24", "pandas>=2.0", "scipy>=1.10", "matplotlib>=3.7", "scikit-learn>=1.3", "wfdb>=4.1", "PyWavelets>=1.4"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["BPM*", "SQI*", "AFib*"]
+exclude = ["*.ESP*", "*.results*"]
+namespaces = true
