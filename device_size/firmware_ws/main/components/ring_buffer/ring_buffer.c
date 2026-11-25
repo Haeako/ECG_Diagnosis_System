@@ -17,13 +17,3 @@ bool ring_buffer_init(void) {
 
     return true;
 }
-
-bool ring_buffer_reset(void)
-{
-    if (sd_buf_handle != NULL) {
-        vRingbufferDelete(sd_buf_handle);
-        sd_buf_handle = NULL;
-    }
-
-    return ring_buffer_init();
-}

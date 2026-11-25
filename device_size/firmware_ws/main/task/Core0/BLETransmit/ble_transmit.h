@@ -6,6 +6,8 @@
 
 /* Core 1 producer: non-blocking handoff of telemetry to the core 0 BLE task. */
 esp_err_t ble_transmit_start(void);
+esp_err_t ble_transmit_begin_session(uint32_t timeout_ms);
+esp_err_t ble_transmit_flush(uint32_t timeout_ms);
 void ble_transmit_enqueue(const ecg_record_t *sample);
 
 #endif

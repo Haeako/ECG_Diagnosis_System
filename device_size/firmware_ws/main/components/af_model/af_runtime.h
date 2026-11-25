@@ -23,6 +23,5 @@ typedef struct {
 void af_runtime_reset(void);
 af_runtime_result_t af_runtime_push_peak(uint32_t peak_timestamp_ms);
 af_runtime_result_t af_runtime_latest(void);
-void af_runtime_last_features(float output[5]);
 
 #endif

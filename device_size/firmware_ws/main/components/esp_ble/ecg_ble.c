@@ -6,7 +6,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "host/ble_hs.h"
+#include "host/ble_att.h"
 #include "host/ble_uuid.h"
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
@@ -32,10 +34,12 @@ static const ble_uuid128_t ecg_command_uuid = BLE_UUID128_INIT(
 
 static const char *TAG = "ECG_BLE";
 static uint8_t own_addr_type;
-static uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static volatile uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t data_handle;
 static uint16_t command_handle;
-static bool notify_enabled;
+static volatile bool notify_enabled, indicate_enabled, tx_stalled;
+static volatile int ack_status;
+static SemaphoreHandle_t indication_done;
 static ecg_ble_command_cb_t command_callback;
 
 /* Both packet types fit the default 20-byte ATT payload. */
@@ -43,10 +47,10 @@ typedef struct __attribute__((packed)) {
     uint8_t version;
     uint8_t type;
     uint8_t count;
-    uint8_t sample_period_ms;
-    uint16_t sequence;
-    uint32_t first_timestamp_ms;
-    int16_t samples[5];
+    uint8_t reserved;
+    uint32_t first_sample_index;
+    uint64_t first_timestamp_us;
+    int16_t samples[96];
 } ecg_ble_batch_packet_t;
 
 typedef struct __attribute__((packed)) {
@@ -54,7 +58,7 @@ typedef struct __attribute__((packed)) {
     uint8_t type;
     uint8_t flags;
     uint8_t sqi_rule_mask;
-    uint32_t timestamp_ms;
+    uint64_t timestamp_us;
     uint16_t bpm;
     uint16_t rr_interval_ms;
     uint8_t sqi_score;
@@ -67,15 +71,15 @@ typedef struct __attribute__((packed)) {
 #define ECG_BLE_PROTOCOL_VERSION 1U
 #define ECG_BLE_PACKET_BATCH     1U
 #define ECG_BLE_PACKET_EVENT     2U
-#define ECG_BLE_BATCH_SAMPLES    5U
+#define ECG_BLE_BATCH_SAMPLES    96U
 #define ECG_BLE_EVENT_R_PEAK     (1U << 0)
 #define ECG_BLE_EVENT_AF_RAW     (1U << 1)
 #define ECG_BLE_EVENT_AF_CONFIRM (1U << 2)
 #define ECG_BLE_EVENT_AF_NEW     (1U << 3)
 #define ECG_BLE_EVENT_BAD_SQI    (1U << 4)
 
-_Static_assert(sizeof(ecg_ble_batch_packet_t) == 20U, "BLE batch must fit ATT");
-_Static_assert(sizeof(ecg_ble_event_packet_t) == 20U, "BLE event must fit ATT");
+_Static_assert(sizeof(ecg_ble_batch_packet_t) == 208U, "BLE batch layout");
+_Static_assert(sizeof(ecg_ble_event_packet_t) == 24U, "BLE microsecond event layout");
 
 static int ecg_ble_gap_event(struct ble_gap_event *event, void *arg);
 static int ecg_ble_data_access(uint16_t conn_handle,
@@ -86,13 +90,22 @@ static int ecg_ble_command_access(uint16_t conn_handle,
                                   uint16_t attr_handle,
                                   struct ble_gatt_access_ctxt *ctxt,
                                   void *arg);
-static uint8_t latest_packet[20];
+static uint8_t latest_packet[208];
 static uint8_t latest_packet_len;
 static ecg_ble_batch_packet_t pending_batch;
-static uint16_t batch_sequence;
-static uint32_t last_batch_sample_ms;
+static ecg_ble_event_packet_t pending_events[8];
+static unsigned pending_event_count;
+static ecg_ble_stats_t tx_stats;
 static uint32_t last_sqi_event_window = UINT32_MAX;
 static uint32_t last_af_event_window = UINT32_MAX;
+
+static unsigned ecg_ble_batch_capacity(void)
+{
+    unsigned mtu=ble_att_mtu(conn_handle);
+    unsigned capacity=mtu>=23U ? (mtu-3U-16U)/2U : 2U;
+    unsigned maximum=indicate_enabled ? ECG_BLE_BATCH_SAMPLES : 32U;
+    return capacity<maximum ? capacity : maximum;
+}
 
 void ble_store_config_init(void);
 
@@ -105,7 +118,7 @@ static const struct ble_gatt_svc_def ecg_gatt_services[] = {
                 .uuid = &ecg_data_uuid.u,
                 .access_cb = ecg_ble_data_access,
                 .val_handle = &data_handle,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_INDICATE,
             },
             {
                 .uuid = &ecg_command_uuid.u,
@@ -235,6 +248,9 @@ static int ecg_ble_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         if (event->connect.status == 0) {
             conn_handle = event->connect.conn_handle;
+            tx_stalled=false;
+            struct ble_gap_upd_params params = {.itvl_min=12,.itvl_max=24,.latency=0,.supervision_timeout=400};
+            (void)ble_gap_update_params(conn_handle,&params);
             ESP_LOGW(TAG, "Central connected handle=%u",
                      (unsigned)conn_handle);
         } else {
@@ -247,7 +263,9 @@ static int ecg_ble_gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGW(TAG, "Central disconnected reason=%d",
                  event->disconnect.reason);
         conn_handle = BLE_HS_CONN_HANDLE_NONE;
-        notify_enabled = false;
+        notify_enabled = indicate_enabled = false;
+        ack_status=BLE_HS_ENOTCONN;
+        if(indication_done) xSemaphoreGive(indication_done);
         ecg_ble_advertise();
         break;
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -255,7 +273,16 @@ static int ecg_ble_gap_event(struct ble_gap_event *event, void *arg)
         break;
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == data_handle) {
-            notify_enabled = event->subscribe.cur_notify != 0;
+            indicate_enabled = event->subscribe.cur_indicate != 0;
+            notify_enabled = event->subscribe.cur_notify != 0 || indicate_enabled;
+            ESP_LOGW(TAG,"Notifications enabled=%d mtu=%u batch_capacity=%u",notify_enabled,(unsigned)ble_att_mtu(conn_handle),ecg_ble_batch_capacity());
+        }
+        break;
+    case BLE_GAP_EVENT_NOTIFY_TX:
+        if(event->notify_tx.indication && event->notify_tx.attr_handle==data_handle
+            && event->notify_tx.conn_handle==conn_handle && event->notify_tx.status!=0) {
+            ack_status=event->notify_tx.status;
+            if(indication_done) xSemaphoreGive(indication_done);
         }
         break;
     default:
@@ -294,6 +321,8 @@ static void ecg_ble_host_task(void *param)
 
 esp_err_t ecg_ble_init(void)
 {
+    indication_done=xSemaphoreCreateBinary();
+    if(!indication_done) return ESP_ERR_NO_MEM;
     int rc = nimble_port_init();
     if (rc != ESP_OK) {
         return rc;
@@ -329,15 +358,73 @@ esp_err_t ecg_ble_init(void)
     return ESP_OK;
 }
 
-static void ecg_ble_send_packet(const void *packet, uint8_t length)
+bool ecg_ble_ready(void) { return notify_enabled && !tx_stalled && conn_handle != BLE_HS_CONN_HANDLE_NONE; }
+ecg_ble_stats_t ecg_ble_stats(void) { return tx_stats; }
+static bool ecg_ble_send_packet(const void *packet, uint8_t length)
 {
     memcpy(latest_packet, packet, length);
     latest_packet_len = length;
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(packet, length);
-    if (om != NULL) {
-        int rc = ble_gatts_notify_custom(conn_handle, data_handle, om);
-        (void)rc;
+    for (unsigned attempt=0; attempt<20; ++attempt) {
+        if (!ecg_ble_ready()) { tx_stats.not_ready++; return false; }
+        bool confirmed=indicate_enabled;
+        if(confirmed) { (void)xSemaphoreTake(indication_done,0); ack_status=0; }
+        int64_t sent_us=esp_timer_get_time();
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(packet,length);
+        int rc=BLE_HS_ENOMEM;
+        if(om) rc=confirmed ? ble_gatts_indicate_custom(conn_handle,data_handle,om)
+                           : ble_gatts_notify_custom(conn_handle,data_handle,om);
+        /* Both NimBLE APIs consume om on success and error. */
+        if (!rc) {
+            if(confirmed) {
+                if(xSemaphoreTake(indication_done,pdMS_TO_TICKS(500))!=pdTRUE) {
+                    tx_stats.ack_timeouts++;tx_stats.failures++;tx_stalled=true;
+                    return false; /* Never reuse an outstanding indication. */
+                }
+                if(ack_status!=BLE_HS_EDONE) { tx_stats.failures++;return false; }
+                uint32_t us=(uint32_t)(esp_timer_get_time()-sent_us);
+                if(us>tx_stats.ack_max_us)tx_stats.ack_max_us=us;
+                tx_stats.indication_acks++;
+            }
+            tx_stats.packets++; return true;
+        }
+        tx_stats.retries++;
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
+    tx_stats.failures++;
+    return false;
+}
+static bool send_event(const ecg_ble_event_packet_t *event)
+{
+ if(ble_att_mtu(conn_handle)>=27U)return ecg_ble_send_packet(event,sizeof(*event));
+ uint8_t legacy[20];memcpy(legacy,event,4);legacy[0]=1;
+ uint32_t ms=(uint32_t)((event->timestamp_us+500U)/1000U);
+ memcpy(legacy+4,&ms,4);memcpy(legacy+8,&event->bpm,12);
+ return ecg_ble_send_packet(legacy,sizeof(legacy));
+}
+static void flush_events(void)
+{
+    if(!pending_event_count)return;
+    if(ble_att_mtu(conn_handle)>=27U)(void)ecg_ble_send_packet(pending_events,sizeof(*pending_events)*pending_event_count);
+    else for(unsigned i=0;i<pending_event_count;i++)(void)send_event(&pending_events[i]);
+    pending_event_count=0;
+}
+static void flush_wave(void)
+{
+    if (!pending_batch.count) return;
+    if (ecg_ble_send_packet(&pending_batch,16U+2U*pending_batch.count)) tx_stats.samples += pending_batch.count;
+    memset(&pending_batch,0,sizeof(pending_batch));
+}
+
+void ecg_ble_flush(void)
+{
+    flush_wave();flush_events();
+}
+
+void ecg_ble_begin_session(void)
+{
+    ecg_ble_flush();
+    memset(&tx_stats,0,sizeof(tx_stats));
+    last_sqi_event_window = last_af_event_window = UINT32_MAX;
 }
 
 void ecg_ble_notify_battery(void)
@@ -370,26 +457,18 @@ void ecg_ble_notify_battery(void)
 
 void ecg_ble_notify(const ecg_record_t *sample)
 {
-    if (sample == NULL || !notify_enabled
-        || conn_handle == BLE_HS_CONN_HANDLE_NONE) return;
-
-    if (last_batch_sample_ms == 0U
-        || (sample->timestamp_ms - last_batch_sample_ms) >= 10U) {
-        last_batch_sample_ms = sample->timestamp_ms;
-        if (pending_batch.count == 0U) {
-            pending_batch.version = ECG_BLE_PROTOCOL_VERSION;
-            pending_batch.type = ECG_BLE_PACKET_BATCH;
-            pending_batch.sequence = batch_sequence++;
-            pending_batch.first_timestamp_ms = sample->timestamp_ms;
-            pending_batch.sample_period_ms = 10U;
+    if (sample == NULL) return;
+    if (!ecg_ble_ready()) { if (!sample->analysis_event) tx_stats.not_ready++; return; }
+    if (!sample->analysis_event) {
+        if (pending_batch.count && sample->sample_index != pending_batch.first_sample_index + pending_batch.count)
+            flush_wave();
+        if (!pending_batch.count) {
+            pending_batch.version=4; pending_batch.reserved=1; pending_batch.type=ECG_BLE_PACKET_BATCH;
+            pending_batch.first_sample_index=sample->sample_index;
+            pending_batch.first_timestamp_us=sample->scheduled_us;
         }
-        if (pending_batch.count < ECG_BLE_BATCH_SAMPLES) {
-            pending_batch.samples[pending_batch.count++] = sample->corrected;
-        }
-        if (pending_batch.count == ECG_BLE_BATCH_SAMPLES) {
-            ecg_ble_send_packet(&pending_batch, sizeof(pending_batch));
-            memset(&pending_batch, 0, sizeof(pending_batch));
-        }
+        pending_batch.samples[pending_batch.count++]=sample->corrected;
+        if (pending_batch.count>=ecg_ble_batch_capacity()) {flush_wave();flush_events();}
     }
 
     bool sqi_changed = sample->sqi_status != ECG_SQI_INSUFFICIENT
@@ -400,11 +479,11 @@ void ecg_ble_notify(const ecg_record_t *sample)
         && !sample->af_new_event) return;
 
     ecg_ble_event_packet_t event = {
-        .version = ECG_BLE_PROTOCOL_VERSION,
+        .version = 5,
         .type = ECG_BLE_PACKET_EVENT,
         .sqi_rule_mask = sample->sqi_rule_mask,
-        .timestamp_ms = sample->is_peak && sample->r_peak_timestamp_ms != 0U
-            ? sample->r_peak_timestamp_ms : sample->timestamp_ms,
+        .timestamp_us = sample->is_peak && sample->r_peak_time_us != 0U
+            ? sample->r_peak_time_us : sample->sample_time_us,
         .bpm = sample->bpm,
         .rr_interval_ms = sample->rr_interval_ms,
         .sqi_score = sample->sqi_score,
@@ -420,7 +499,14 @@ void ecg_ble_notify(const ecg_record_t *sample)
     if (sample->sqi_status == ECG_SQI_UNUSABLE) {
         event.flags |= ECG_BLE_EVENT_BAD_SQI;
     }
-    ecg_ble_send_packet(&event, sizeof(event));
+    if(indicate_enabled) {
+        pending_events[pending_event_count++]=event;
+        unsigned mtu=ble_att_mtu(conn_handle);
+        unsigned limit=mtu>=23U ? (mtu-3U)/sizeof(event) : 1U;
+        if(!limit)limit=1U;
+        if(limit>8U)limit=8U;
+        if(pending_event_count>=limit)flush_events();
+    } else if (!send_event(&event)) return;
     if (sqi_changed) last_sqi_event_window = sample->sqi_window_id;
     if (af_changed) last_af_event_window = sample->af_window_id;
 }

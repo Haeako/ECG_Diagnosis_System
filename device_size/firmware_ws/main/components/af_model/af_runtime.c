@@ -22,7 +22,6 @@ typedef struct {
     uint8_t decisions;
     uint8_t decision_count;
     uint16_t next_event_id;
-    float last_features[AF_MODEL_FEATURE_COUNT];
     af_runtime_result_t latest;
 } af_runtime_state_t;
 
@@ -115,7 +114,6 @@ static af_runtime_result_t infer_window(void)
         sd2 > 0.0f ? sd1 / sd2 : 0.0f,
         0.5f * (sorted[14] + sorted[15]),
     };
-    memcpy(state.last_features, features, sizeof(features));
     int8_t quantized[AF_MODEL_FEATURE_COUNT];
     af_model_quantize(features, quantized);
     af_model_result_t prediction = af_model_predict_int8(quantized);
@@ -163,12 +161,6 @@ af_runtime_result_t af_runtime_latest(void)
     result.new_window = false;
     result.new_event = false;
     return result;
-}
-
-void af_runtime_last_features(float output[AF_MODEL_FEATURE_COUNT])
-{
-    if (output != NULL) memcpy(output, state.last_features,
-                               sizeof(state.last_features));
 }
 
 af_runtime_result_t af_runtime_push_peak(uint32_t peak_timestamp_ms)

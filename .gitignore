@@ -25,3 +25,4 @@ sdkconfig
 sdkconfig.old
 .DS_Store
 Thumbs.db
+AGENT.md

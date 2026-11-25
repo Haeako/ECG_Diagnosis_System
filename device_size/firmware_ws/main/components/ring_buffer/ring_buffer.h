@@ -7,6 +7,5 @@
 extern RingbufHandle_t sd_buf_handle;
 
 bool ring_buffer_init(void);
-bool ring_buffer_reset(void);
 
 #endif

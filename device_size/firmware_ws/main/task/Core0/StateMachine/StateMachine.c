@@ -584,8 +584,3 @@ static void ble_command_handler(ecg_ble_command_t command)
         break;
     }
 }
-
-MODE state_machine_get_mode(void)
-{
-    return current_mode;
-}

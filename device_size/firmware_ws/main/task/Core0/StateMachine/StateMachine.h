@@ -37,6 +37,5 @@ esp_err_t state_machine_post_event(state_cause_t event, esp_err_t error);
 esp_err_t state_machine_start(void);
 
 /* Read-only status for diagnostics. */
-MODE state_machine_get_mode(void);
 
 #endif

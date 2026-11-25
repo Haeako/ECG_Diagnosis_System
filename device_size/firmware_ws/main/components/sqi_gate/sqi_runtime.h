@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define ECG_SQI_INSUFFICIENT_SCORE 255U
 #define ECG_SQI_USABLE_THRESHOLD   66U
@@ -31,10 +32,7 @@ typedef struct {
 } ecg_sqi_result_t;
 
 void sqi_runtime_reset(uint32_t now_ms);
-ecg_sqi_result_t sqi_runtime_push(int16_t ecg_sample,
-                                  bool is_r_peak,
-                                  uint32_t r_peak_timestamp_ms,
-                                  uint32_t now_ms);
-
-
+/* Complete 3600-sample normalized notch window and Fast-QRS sample indices. */
+ecg_sqi_result_t sqi_runtime_evaluate_window(const float *samples,
+    const uint16_t *peaks, size_t count, uint32_t start_ms, uint32_t window_id);
 #endif

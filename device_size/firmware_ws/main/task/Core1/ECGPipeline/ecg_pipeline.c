@@ -17,7 +17,8 @@
 
 #include "components/esp_ble/ecg_ble.h"
 #include "components/af_model/af_runtime.h"
-#include "components/os/semaphore.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
 #include "components/metrics/pipeline_metrics.h"
 #include "components/ring_buffer/ring_buffer.h"
 #include "components/sqi_gate/sqi_runtime.h"
@@ -25,27 +26,25 @@
 #include "drivers/sd_spi/sd_spi.h"
 #include "drivers/timer/timer.h"
 #include "ExtractFeature.h"
+#include "components/processing/ecg_processor.h"
+#include "components/processing/ecg_capture.h"
 #include "task/Core0/BLETransmit/ble_transmit.h"
 
 #define ECG_SD_FILE_MAX_LEN     64
 #define ECG_SD_SEGMENT_MS       60000
 #define SD_BATCH_SAMPLES        32
-#define SD_BATCH_BYTES          6144
+#define SD_BATCH_BYTES          8192
 #define SD_TASK_STACK_SIZE      6144
 #define SD_TASK_CORE            0
-#define ECG_PROCESSING_CORE     1
 #define SD_RINGBUFFER_DROP_LIMIT 32
 #define SD_DRAIN_TIMEOUT_MS      3000U
-#define RPEAK_ALIGN_DELAY_MS    1000U
-#define RPEAK_PENDING_SAMPLES   512U
 
 void ecg_pipeline_set_event_callback(ecg_pipeline_event_cb_t callback);
 static void ecg_pipeline_raise_event(ecg_pipeline_event_t event, esp_err_t error, const char *detail);
 static const char *TAG_ECG = "ECG";
 
-SemaphoreHandle_t adc_timer_semaphore_handle = NULL;
+QueueHandle_t adc_release_queue_handle = NULL;
 adc_oneshot_unit_handle_t adc_handle = NULL;
-gptimer_handle_t adc_timer_handle = NULL;
 
 static SemaphoreHandle_t sd_access_mutex = NULL;
 static SemaphoreHandle_t sd_drained_semaphore = NULL;
@@ -58,12 +57,12 @@ static uint32_t ecg_sd_segment_index    = 0;
 static bool     sd_single_file_fallback = false;
 
 static char         sd_batch[SD_BATCH_BYTES];
-static ecg_record_t rpeak_pending[RPEAK_PENDING_SAMPLES];
+static char sd_event_batch[4096];
 
 static volatile bool record_active = false;
+static bool ble_available;
 static volatile bool sd_stop_requested = false;
 static TaskHandle_t sd_task_handle = NULL;
-static TaskHandle_t ecg_task_handle = NULL;
 static ecg_pipeline_event_cb_t pipeline_event_cb = NULL;
 
 static size_t append_event_row(char *buffer, size_t capacity, size_t used,
@@ -149,6 +148,7 @@ esp_err_t ecg_pipeline_start_recording(void)
     uint32_t now_ms;
     esp_err_t ret;
 
+    if (record_active) return ESP_ERR_INVALID_STATE;
     ADC_Init();
     sd_stop_requested = false;
     if (sd_drained_semaphore != NULL) {
@@ -220,20 +220,24 @@ esp_err_t ecg_pipeline_start_recording(void)
         return ESP_FAIL;
     }
 
-    ecg_signal_reset(now_ms);
-    af_runtime_reset();
-    sqi_runtime_reset(now_ms);
-    pipeline_metrics_start_session();
+    ret = ble_available ? ble_transmit_begin_session(5000) : ESP_OK;
+    if (ret != ESP_OK) { sd_spi_close(); ADC_Deinit(); return ret; }
+    ecg_processor_reset(now_ms);
     record_active = true;
-    Timer_Start();
-    return ESP_OK;
+    ret = ecg_capture_start();
+    if (ret != ESP_OK) {
+        record_active = false;
+        sd_spi_close();
+        ADC_Deinit();
+    }
+    return ret;
 }
 
 esp_err_t ecg_pipeline_stop_record(void)
 {
     bool was_recording = record_active;
-    record_active = false;
-    Timer_Stop();
+    esp_err_t capture_stop=ecg_capture_stop(SD_DRAIN_TIMEOUT_MS);
+    if(capture_stop!=ESP_OK) return capture_stop;
     ADC_Deinit();
 
     if (was_recording && sd_task_handle != NULL) {
@@ -253,6 +257,25 @@ esp_err_t ecg_pipeline_stop_record(void)
         sd_spi_close();
         xSemaphoreGive(sd_access_mutex);
     }
+    if (was_recording && ble_available) {
+        esp_err_t status = ble_transmit_flush(5000);
+        if (status != ESP_OK) {
+            ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_BLE_FAULT, status, "ble-flush-timeout");
+        }
+    }
+    if (was_recording) {
+        ecg_capture_stats_t stats = ecg_capture_stats();
+        pipeline_deadlines_t deadlines = pipeline_metrics_deadlines();
+        ESP_LOGW(TAG_ECG, "STOP acquired=%llu processed=%llu raw_drops=%llu adc_errors=%llu timer_skips=%lu",
+            (unsigned long long)stats.acquired, (unsigned long long)stats.processed,
+            (unsigned long long)stats.raw_drops, (unsigned long long)stats.adc_errors,
+            (unsigned long)Timer_SkippedReleases());
+        ESP_LOGW(TAG_ECG, "STOP release_overruns=%llu sd_drops=%llu ble_drops=%llu dsp_max_us=%lu window_misses=%llu",
+            (unsigned long long)deadlines.notify_overruns, (unsigned long long)deadlines.sd_drops,
+            (unsigned long long)deadlines.ble_drops, (unsigned long)stats.dsp_compute_max_us,
+            (unsigned long long)stats.window_misses);
+    }
+    record_active = false;
     pipeline_metrics_stop_session();
     return ESP_OK;
 }
@@ -263,8 +286,8 @@ esp_err_t ecg_pipeline_recover_from_event(ecg_pipeline_event_t event)
 
     ESP_LOGW(TAG_ECG, "Recovering pipeline from event=%d", event);
 
-    record_active = false;
-    Timer_Stop();
+    ret=ecg_pipeline_stop_record();
+    if(ret!=ESP_OK) return ret;
 
     switch (event) {
     case ECG_PIPELINE_EVENT_SD_FAULT:
@@ -282,21 +305,7 @@ esp_err_t ecg_pipeline_recover_from_event(ecg_pipeline_event_t event)
         break;
 
     case ECG_PIPELINE_EVENT_BUFFER_FAULT:
-        /*
-         * Let sd_write_task leave its short receive/write cycle before replacing
-         * the global ring buffer handle. Then suspend it briefly so the handle
-         * cannot be used while the buffer is deleted and recreated.
-         */
-        vTaskDelay(pdMS_TO_TICKS(600));
-        if (sd_task_handle != NULL) {
-            vTaskSuspend(sd_task_handle);
-        }
-        if (!ring_buffer_reset()) {
-            ret = ESP_ERR_NO_MEM;
-        }
-        if (sd_task_handle != NULL) {
-            vTaskResume(sd_task_handle);
-        }
+        /* STOP has drained the buffer; retain the handle used by the writer. */
         break;
 
     case ECG_PIPELINE_EVENT_TASK_FAULT:
@@ -317,209 +326,76 @@ esp_err_t ecg_pipeline_recover_from_event(ecg_pipeline_event_t event)
     return ret;
 }
 
-static void ecg_processing_task(void *pvParameters)
+/* Analysis windows produce retrospective events, independently of waveform
+ * samples. Both transports keep the original peak timestamps. */
+static void analysis_event_sink(const ecg_record_t *event, void *context)
 {
-    int raw = 0;
-    uint32_t ringbuffer_drop_count = 0;
-    uint32_t heartbeat_start_ms = 0U;
-    uint32_t heartbeat_samples = 0U;
-    uint32_t heartbeat_record_start_ms = 0U;
-
-    while (1) {
-        /* A finite wait also wakes an already-blocked task after STOP. */
-        if (xSemaphoreTake(adc_timer_semaphore_handle, pdMS_TO_TICKS(250)) != pdTRUE) {
-            if (!record_active) {
-                battery_poll(ecg_now_ms());
-            }
-            continue;
-        }
-
-        if (!record_active) {
-            continue;
-        }
-        uint64_t pipeline_start_us = (uint64_t)esp_timer_get_time();
-        pipeline_metrics_sample_begin(pipeline_start_us,
-                                      pipeline_metrics_last_isr_us());
-
-        if (heartbeat_record_start_ms != ecg_record_start_ms) {
-            heartbeat_record_start_ms = ecg_record_start_ms;
-            heartbeat_start_ms = 0U;
-            heartbeat_samples = 0U;
-            ringbuffer_drop_count = 0U;
-        }
-
-        esp_err_t adc_ret = ADC_Read(&raw);
-        if (adc_ret != ESP_OK) {
-            if (!record_active) {
-                continue;
-            }
-            ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_ADC_FAULT,
-                                     adc_ret,
-                                     "adc-read-failed");
-            continue;
-        }
-
-        ecg_record_t sample = ecg_signal_process(raw, ecg_now_ms());
-        heartbeat_samples++;
-        af_runtime_result_t af = sample.is_peak != 0U
-            ? af_runtime_push_peak(sample.r_peak_timestamp_ms)
-            : af_runtime_latest();
-        sample.af_probability_x10000 = af.probability_x10000;
-        sample.af_score = af.score;
-        sample.af_event_id = af.event_id;
-        sample.af_window_id = af.window_id;
-        sample.af_valid = af.valid ? 1U : 0U;
-        sample.af_raw_prediction = af.raw_prediction ? 1U : 0U;
-        sample.af_confirmed = af.confirmed ? 1U : 0U;
-        sample.af_new_window = af.new_window ? 1U : 0U;
-        sample.af_new_event = af.new_event ? 1U : 0U;
-        ecg_sqi_result_t sqi = sqi_runtime_push(sample.corrected,
-                                                sample.is_peak != 0U,
-                                                sample.r_peak_timestamp_ms,
-                                                sample.timestamp_ms);
-        sample.sqi_score = sqi.score;
-        sample.sqi_status = (uint8_t)sqi.status;
-        sample.sqi_rule_mask = sqi.rule_mask;
-        sample.sqi_heart_rate_bpm = sqi.heart_rate_bpm;
-        sample.sqi_max_rr_ms = sqi.max_rr_ms;
-        sample.sqi_rr_ratio_x1000 = sqi.rr_ratio_x1000;
-        sample.sqi_template_correlation_x1000 =
-            sqi.template_correlation_x1000;
-        sample.sqi_window_id = sqi.window_id;
-        sample.sqi_finalize_us = sqi.finalize_us;
-        ble_transmit_enqueue(&sample);
-
-        if (xRingbufferSend(sd_buf_handle, &sample, sizeof(sample), 0) != pdTRUE) {
-            pipeline_metrics_sd_drop();
-            ringbuffer_drop_count++;
-            ESP_LOGW(TAG_ECG, "SD ring buffer full, sample dropped");
-            if (ringbuffer_drop_count >= SD_RINGBUFFER_DROP_LIMIT) {
-                ringbuffer_drop_count = 0;
-                ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_BUFFER_FAULT,
-                                         ESP_ERR_NO_MEM,
-                                         "sd-ringbuffer-drop-limit");
-            }
-        } else {
-            ringbuffer_drop_count = 0;
-        }
-        size_t sd_free = xRingbufferGetCurFreeSize(sd_buf_handle);
-        pipeline_metrics_sd_queue(2U * 16384U - sd_free, 2U * 16384U);
-        /* Optional ADC1 work only after ECG/DSP/queues, with >1.7 ms nominal
-         * slack before the next 360 Hz interrupt. No concurrent ADC reader. */
-        int64_t sinceIsr = esp_timer_get_time() - pipeline_metrics_last_isr_us();
-        if (record_active && sinceIsr >= 0 && sinceIsr < 1000) {
-            battery_poll(ecg_now_ms());
-        }
-        pipeline_metrics_sample_end((uint32_t)
-            ((uint64_t)esp_timer_get_time() - pipeline_start_us));
-
-        if (heartbeat_start_ms == 0U) {
-            heartbeat_start_ms = sample.timestamp_ms;
-            heartbeat_samples = 0U;
-        } else if ((sample.timestamp_ms - heartbeat_start_ms) >= 10000U) {
-            uint32_t elapsed_ms = sample.timestamp_ms - heartbeat_start_ms;
-            uint32_t rate_x10 = elapsed_ms > 0U
-                ? (heartbeat_samples * 10000U) / elapsed_ms : 0U;
-            ESP_LOGW(TAG_ECG,
-                "HEALTH rate=%lu.%luHz raw=%u corrected=%d bpm=%u "
-                "sqi=%u/%u window=%lu af=%u p=%u window=%lu heap=%lu",
-                (unsigned long)(rate_x10 / 10U),
-                (unsigned long)(rate_x10 % 10U),
-                sample.raw_adc, sample.corrected, sample.bpm,
-                sample.sqi_status, sample.sqi_score,
-                (unsigned long)sample.sqi_window_id,
-                sample.af_confirmed, sample.af_probability_x10000,
-                (unsigned long)sample.af_window_id,
-                (unsigned long)esp_get_free_heap_size());
-            heartbeat_start_ms = sample.timestamp_ms;
-            heartbeat_samples = 0U;
-        }
+    (void)context;
+    ble_transmit_enqueue(event);
+    if (xRingbufferSend(sd_buf_handle, event, sizeof(*event), 0) != pdTRUE) {
+        pipeline_metrics_sd_drop();
     }
+}
+
+static void acquisition_idle(void)
+{
+    battery_poll(ecg_now_ms());
+}
+
+static void acquisition_fault(esp_err_t error)
+{
+    ecg_pipeline_raise_event(error==ESP_ERR_NO_MEM ? ECG_PIPELINE_EVENT_BUFFER_FAULT
+        : ECG_PIPELINE_EVENT_ADC_FAULT,error,"adc-acquisition-or-raw-queue");
+}
+
+
+static void processed_sample(const ecg_record_t *sample, void *context)
+{
+    (void)context;
+    static uint32_t session, consecutive_drops;
+    if(session!=ecg_record_start_ms) {session=ecg_record_start_ms;consecutive_drops=0;}
+    ble_transmit_enqueue(sample);
+    if (xRingbufferSend(sd_buf_handle,sample,sizeof(*sample),0)!=pdTRUE) {
+        pipeline_metrics_sd_drop();
+        if(++consecutive_drops>=SD_RINGBUFFER_DROP_LIMIT) {
+            consecutive_drops=0;
+            ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_BUFFER_FAULT,
+                ESP_ERR_NO_MEM,"sd-ringbuffer-drop-limit");
+        }
+    } else {
+        consecutive_drops=0;
+    }
+    size_t available=xRingbufferGetCurFreeSize(sd_buf_handle);
+    pipeline_metrics_sd_queue(2U*16384U-available,2U*16384U);
 }
 
 static void sd_write_task(void *pvParameters)
 {
     (void)pvParameters;
-    size_t pending_head = 0;
-    size_t pending_count = 0;
     uint32_t last_logged_sqi_window = UINT32_MAX;
     uint8_t last_logged_sqi_status = ECG_SQI_INSUFFICIENT;
     bool last_logged_af_confirmed = false;
-    uint32_t logged_record_start_ms = 0U;
-
-    while (1) {
+    uint32_t logged_record_start_ms = 0;
+    for (;;) {
         if (logged_record_start_ms != ecg_record_start_ms) {
             logged_record_start_ms = ecg_record_start_ms;
             last_logged_sqi_window = UINT32_MAX;
             last_logged_sqi_status = ECG_SQI_INSUFFICIENT;
             last_logged_af_confirmed = false;
         }
-        size_t batch_len = 0;
-        char event_batch[1024];
-        size_t event_batch_len = 0;
+        size_t batch_len = 0, event_batch_len = 0;
         bool received_sample = false;
-        uint32_t newest_timestamp_ms = 0;
-
-        for (int i = 0; i < SD_BATCH_SAMPLES; i++) {
+        for (unsigned i = 0; i < SD_BATCH_SAMPLES; ++i) {
             size_t item_size = 0;
-            TickType_t wait = i == 0 && (record_active || pending_count == 0)
-                ? pdMS_TO_TICKS(500) : 0;
-            ecg_record_t *sample = (ecg_record_t *)xRingbufferReceive(
-                sd_buf_handle, &item_size, wait);
-            if (sample == NULL) {
-                break;
-            }
-
+            ecg_record_t *sample = xRingbufferReceive(sd_buf_handle, &item_size,
+                i == 0 ? pdMS_TO_TICKS(250) : 0);
+            if (!sample) break;
+            received_sample = true;
             if (item_size == sizeof(*sample)) {
-                received_sample = true;
-                newest_timestamp_ms = sample->timestamp_ms;
-
-                if (sample->is_peak && sample->r_peak_timestamp_ms != 0U) {
-                    size_t best_offset = pending_count;
-                    uint32_t best_error = UINT32_MAX;
-                    for (size_t offset = 0; offset < pending_count; ++offset) {
-                        size_t slot = (pending_head + offset)
-                            % RPEAK_PENDING_SAMPLES;
-                        uint32_t timestamp = rpeak_pending[slot].timestamp_ms;
-                        uint32_t error = timestamp > sample->r_peak_timestamp_ms
-                            ? timestamp - sample->r_peak_timestamp_ms
-                            : sample->r_peak_timestamp_ms - timestamp;
-                        if (error < best_error) {
-                            best_error = error;
-                            best_offset = offset;
-                        }
-                    }
-                    if (best_offset < pending_count) {
-                        size_t slot = (pending_head + best_offset)
-                            % RPEAK_PENDING_SAMPLES;
-                        rpeak_pending[slot].is_peak = 1U;
-                    } else {
-                        ESP_LOGW(TAG_ECG,
-                                 "Aligned R timestamp is outside pending window");
-                    }
-                }
-
-                if (pending_count == RPEAK_PENDING_SAMPLES) {
-                    ESP_LOGW(TAG_ECG, "R-peak alignment window full");
-                    pending_head = (pending_head + 1U) % RPEAK_PENDING_SAMPLES;
-                    pending_count--;
-                }
-                size_t tail = (pending_head + pending_count)
-                    % RPEAK_PENDING_SAMPLES;
-                rpeak_pending[tail] = *sample;
-                rpeak_pending[tail].is_peak = 0U;
-                pending_count++;
-            }
-            vRingbufferReturnItem(sd_buf_handle, sample);
-        }
-
-        for (int i = 0; i < SD_BATCH_SAMPLES && pending_count > 0; ++i) {
-            ecg_record_t *sample = &rpeak_pending[pending_head];
-            bool old_enough = received_sample
-                && (newest_timestamp_ms - sample->timestamp_ms)
-                    >= RPEAK_ALIGN_DELAY_MS;
-            if (received_sample && !old_enough) break;
-
+                if (sample->analysis_event) {
+                    event_batch_len = append_event_row(sd_event_batch,
+                        sizeof(sd_event_batch), event_batch_len, "R_PEAK", sample);
+                } else {
             int line_len = snprintf(sd_batch + batch_len,
                                     sizeof(sd_batch) - batch_len,
                                     "%s%lu,%u,%d,%d,%d,%.3f,%.3f,%u,%u,%u,%u,%u,%u,%u,%u,%d,%lu,%lu,%u,%u,%u,%u,%u,%lu,%u,%u,%u\n",
@@ -532,7 +408,7 @@ static void sd_write_task(void *pvParameters)
                                     (double)sample->ma_qrs_100ms,
                                     (double)sample->threshold,
                                     sample->is_peak,
-                                    sample->instant_bpm,
+                                    sample->bpm,
                                     sample->sqi_score,
                                     sample->sqi_status,
                                     sample->sqi_rule_mask,
@@ -554,84 +430,61 @@ static void sd_write_task(void *pvParameters)
             if (line_len <= 0
                 || line_len >= (int)(sizeof(sd_batch) - batch_len)) {
                 ESP_LOGW(TAG_ECG, "SD batch full, flushing early");
-                break;
+                pipeline_metrics_sd_drop();
             }
-            batch_len += line_len;
+            if (line_len > 0 && line_len < (int)(sizeof(sd_batch) - batch_len)) batch_len += line_len;
 
+                }
             if (sample->sqi_status != ECG_SQI_INSUFFICIENT
                 && sample->sqi_window_id != last_logged_sqi_window) {
                 if (sample->sqi_status == ECG_SQI_UNUSABLE) {
-                    event_batch_len = append_event_row(event_batch,
-                        sizeof(event_batch), event_batch_len, "BAD_SQI", sample);
+                    event_batch_len = append_event_row(sd_event_batch,
+                        sizeof(sd_event_batch), event_batch_len, "BAD_SQI", sample);
                 } else if (last_logged_sqi_status == ECG_SQI_UNUSABLE) {
-                    event_batch_len = append_event_row(event_batch,
-                        sizeof(event_batch), event_batch_len, "SQI_RECOVERED", sample);
+                    event_batch_len = append_event_row(sd_event_batch,
+                        sizeof(sd_event_batch), event_batch_len, "SQI_RECOVERED", sample);
                 }
                 last_logged_sqi_window = sample->sqi_window_id;
                 last_logged_sqi_status = sample->sqi_status;
             }
             if (sample->af_new_event) {
-                event_batch_len = append_event_row(event_batch,
-                    sizeof(event_batch), event_batch_len, "AF_SUSPECTED", sample);
+                event_batch_len = append_event_row(sd_event_batch,
+                    sizeof(sd_event_batch), event_batch_len, "AF_SUSPECTED", sample);
             }
             if (sample->af_new_window) {
                 if (last_logged_af_confirmed && !sample->af_confirmed) {
-                    event_batch_len = append_event_row(event_batch,
-                        sizeof(event_batch), event_batch_len, "AF_ENDED", sample);
+                    event_batch_len = append_event_row(sd_event_batch,
+                        sizeof(sd_event_batch), event_batch_len, "AF_ENDED", sample);
                 }
                 last_logged_af_confirmed = sample->af_confirmed != 0U;
             }
-            pending_head = (pending_head + 1U) % RPEAK_PENDING_SAMPLES;
-            pending_count--;
+            }
+            vRingbufferReturnItem(sd_buf_handle, sample);
         }
-
-        if (batch_len > 0) {
+        if (batch_len || event_batch_len) {
             xSemaphoreTake(sd_access_mutex, portMAX_DELAY);
             if (ecg_sd_file[0] != '\0') {
                 uint32_t now_ms = ecg_now_ms();
-
-                /* A full FAT root directory can reject creation of new 8.3
-                 * files with EACCES.  In fallback mode both samples and
-                 * events are intentionally appended to the existing
-                 * test.txt file, so do not try to "rotate" it every minute.
-                 * This keeps recording alive until the user stops it with
-                 * the physical button. */
+                esp_err_t status = ESP_OK;
                 if (!sd_single_file_fallback
-                    && (now_ms - ecg_sd_segment_start_ms) >= ECG_SD_SEGMENT_MS
-                    && ecg_start_sd_segment(now_ms) != ESP_OK) {
-                    ESP_LOGW(TAG_ECG, "SD segment header write failed");
-                    ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
-                                             ESP_FAIL,
-                                             "sd-segment-header-write-failed");
-                } else {
-                    int64_t write_start_us = esp_timer_get_time();
-                    esp_err_t write_status =
-                        sd_spi_write(ecg_sd_file, sd_batch, batch_len);
-                    pipeline_metrics_sd_write(
-                        (uint32_t)(esp_timer_get_time() - write_start_us),
-                        batch_len, write_status == ESP_OK);
-                    if (write_status != ESP_OK) {
-                    ESP_LOGW(TAG_ECG, "SD write failed");
-                    ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
-                                             ESP_FAIL,
-                                             "sd-write-failed");
-                    }
+                    && now_ms - ecg_sd_segment_start_ms >= ECG_SD_SEGMENT_MS) {
+                    status = ecg_start_sd_segment(now_ms);
                 }
-                if (event_batch_len > 0U && ecg_event_file[0] != '\0'
-                    && sd_spi_write(ecg_event_file, event_batch,
-                                    event_batch_len) != ESP_OK) {
-                    ESP_LOGW(TAG_ECG, "Event journal write failed");
+                int64_t started = esp_timer_get_time();
+                if (status == ESP_OK && batch_len)
+                    status = sd_spi_write(ecg_sd_file, sd_batch, batch_len);
+                if (status == ESP_OK && event_batch_len && ecg_event_file[0])
+                    status = sd_spi_write(ecg_event_file, sd_event_batch, event_batch_len);
+                pipeline_metrics_sd_write((uint32_t)(esp_timer_get_time() - started),
+                    batch_len + event_batch_len, status == ESP_OK);
+                if (status != ESP_OK) {
                     ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_SD_FAULT,
-                                             ESP_FAIL,
-                                             "event-journal-write-failed");
+                                             status, "sd-write-failed");
                 }
             }
             xSemaphoreGive(sd_access_mutex);
         }
-
-        /* Acknowledge STOP only after one complete pass observes no queued
-         * sample and all delayed R-peak alignment records have been flushed. */
-        if (sd_stop_requested && !received_sample && pending_count == 0U) {
+        if (sd_stop_requested && !received_sample) {
             sd_stop_requested = false;
             xSemaphoreGive(sd_drained_semaphore);
         }
@@ -649,9 +502,9 @@ esp_err_t ecg_pipeline_init(void)
         ESP_LOGW(TAG_ECG, "Battery calibration unavailable (%s)", esp_err_to_name(batteryStatus));
     }
     pipeline_metrics_init();
-    Semaphore_Init(&adc_timer_semaphore_handle);
-    if (adc_timer_semaphore_handle == NULL) {
-        ESP_LOGE(TAG_ECG, "ADC timer semaphore allocation failed");
+    adc_release_queue_handle = xQueueCreate(1, sizeof(timer_release_t));
+    if (adc_release_queue_handle == NULL) {
+        ESP_LOGE(TAG_ECG, "ADC release queue allocation failed");
         return ESP_ERR_NO_MEM;
     }
     if (!ring_buffer_init()) {
@@ -667,9 +520,7 @@ esp_err_t ecg_pipeline_init(void)
         ESP_LOGE(TAG_ECG, "SD drain semaphore allocation failed");
         return ESP_ERR_NO_MEM;
     }
-    ecg_signal_init(ecg_now_ms());
-    af_runtime_reset();
-    sqi_runtime_reset(ecg_now_ms());
+    ecg_processor_reset(ecg_now_ms());
     Timer_Init();
     return ESP_OK;
 }
@@ -685,17 +536,17 @@ esp_err_t ecg_pipeline_start_tasks(void)
         return ESP_ERR_NO_MEM;
     }
     pipeline_metrics_register_task(METRICS_TASK_SD, sd_task_handle);
-    if (xTaskCreatePinnedToCore(ecg_processing_task, "ECG_Task", 4096, NULL, 5,
-                                &ecg_task_handle, ECG_PROCESSING_CORE) != pdPASS) {
-        ESP_LOGE(TAG_ECG, "ECG task creation failed");
-        ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_TASK_FAULT, ESP_ERR_NO_MEM, "ecg-process-task-create-failed");
-        return ESP_ERR_NO_MEM;
-    }
-    pipeline_metrics_register_task(METRICS_TASK_ECG, ecg_task_handle);
+    ecg_capture_config_t capture_config={
+        .sample=processed_sample, .peak=analysis_event_sink, .idle=acquisition_idle,
+        .fault=acquisition_fault,
+    };
+    esp_err_t capture_status=ecg_capture_init(&capture_config);
+    if(capture_status!=ESP_OK) return capture_status;
     esp_err_t ble_status = ecg_ble_init();
     if (ble_status == ESP_OK) {
         ble_status = ble_transmit_start();
     }
+    ble_available = ble_status == ESP_OK;
     if (ble_status != ESP_OK) {
         ESP_LOGE(TAG_ECG, "BLE stage 1 failed (%s); SD pipeline remains active", esp_err_to_name(ble_status));
         ecg_pipeline_raise_event(ECG_PIPELINE_EVENT_BLE_FAULT, ble_status, "ble-init-failed");

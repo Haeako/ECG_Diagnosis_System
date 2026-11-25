@@ -2,7 +2,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-char *ECG_Sensor = "AD8232";
 extern adc_oneshot_unit_handle_t adc_handle;
 static SemaphoreHandle_t g_adcLock;
 
